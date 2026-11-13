@@ -19,6 +19,15 @@ $env:DEBUG = '1'
 $env:SQLITE_PATH = Join-Path $runtimeRoot 'local.sqlite3'
 $env:ALLOWED_HOSTS = '127.0.0.1,localhost'
 $env:DATABASE_URL = ''
+$env:DATABASE_SCHEMA = ''
+$localEnv = Join-Path $PSScriptRoot '.env.local'
+if (Test-Path -LiteralPath $localEnv) {
+    foreach ($line in (Get-Content -LiteralPath $localEnv)) {
+        if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+}
 & $pythonExe manage.py migrate --noinput
 if ($LASTEXITCODE -ne 0) { throw 'Falha nas migrations.' }
 if ($Worker) {

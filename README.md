@@ -6,6 +6,9 @@ Aplicação própria de atribuição e acompanhamento comercial de conversas do 
 
 - Clientes separados, usuários e perfis gestor, operador e leitura.
 - Múltiplas instâncias Z-API por cliente.
+- Z-API Omni: configuração de chave por canal e registro/atualização do próprio webhook com formato `Z_API`, Bearer e assinatura HMAC; gzip com limite de expansão e deduplicação.
+- Facebook por cliente: credenciais criptografadas, OAuth com `ads_read`, seleção de conta autorizada, importação diária dos últimos 30 dias e atualização a cada hora pelo worker.
+- Relatório por anúncio com campanha, conjunto, investimento, impressões, cliques e custo por contato identificado no WhatsApp.
 - Webhook privado por instância, segredo aleatório de 256 bits armazenado como hash e rotação da URL.
 - Fila de entrada persistida no banco antes de responder ao webhook.
 - Mensagens recebidas e enviadas, deduplicação por mensagem, edição e ordenação pelo horário do provedor.
@@ -36,6 +39,31 @@ Para testar a fila de webhooks localmente, execute em outro terminal:
 ```
 
 Use somente um worker com SQLite. Produção exige PostgreSQL. A demonstração é proibida quando `DEBUG=0`.
+
+`Start.ps1` lê `.env.local` quando existir. Esse arquivo é privado e ignorado pelo Git. Mantenha `data/local-secret.txt`: ele protege tanto as sessões quanto as credenciais criptografadas. Trocar `SECRET_KEY` exige restaurar a chave antiga ou cadastrar as credenciais novamente. Faça backup do banco e da chave separadamente.
+
+## Z-API Omni
+
+1. Conecte o número no painel Omni por WhatsApp Web/QR Code.
+2. Em WhatsApp / Z-API, cadastre uma conexão com provedor **Z-API Omni**, o ID do canal e o telefone conectado.
+3. Salve a **Secret Key do workspace** (Segurança → Credenciais da API). O token exibido no canal não substitui essa chave.
+4. Configure `PUBLIC_BASE_URL` com a origem HTTPS pública do app ou do túnel local e reinicie web/worker.
+5. Use **Registrar webhook Omni**. O app adiciona um webhook `RECEIVED_AND_DELIVERY` em formato `Z_API`, com Bearer e HMAC. Outros webhooks permanecem intactos. Não use formato `DEFAULT` nesse receptor.
+6. Envie uma mensagem a partir de outro número e confira a conversa e o estado do evento no app. Para anúncios CTWA, valide o recebimento real de `externalAdReply.sourceId` e `ctwaClid`; não é possível fabricar a origem de mensagens sem evidência.
+
+Para testes locais, rode `python webhook_proxy.py` e aponte um túnel HTTPS para `http://127.0.0.1:8766`. O proxy só encaminha POSTs dos webhooks Omni ao app em 8765, sem disponibilizar login/admin pela internet. A URL temporária muda se o túnel for recriado: atualize `PUBLIC_BASE_URL`, reinicie web/worker e atualize o webhook no app. O computador, app, worker, proxy e túnel precisam permanecer ligados.
+
+O segredo HMAC retornado pelo Omni é salvo criptografado. A assinatura usa timestamp, tópico, partição, offset e corpo descomprimido, conforme a documentação. Assinaturas com mais de cinco minutos são recusadas. A URL isoladamente não autoriza callbacks Omni: também são exigidos Bearer e assinatura.
+
+## Facebook / Meta Ads
+
+1. Abra **Facebook / Meta** dentro do cliente e salve App ID e App Secret. Alternativamente, salve um token com `ads_read` autorizado para os ativos desejados.
+2. No painel do app da Meta, habilite o fluxo de login compatível e cadastre exatamente o callback exibido pelo Rastro em URIs OAuth válidos. Localmente, abra sempre a mesma origem usada para iniciar o fluxo; o túnel exclusivo de webhooks não serve como callback de login.
+3. Clique **Autorizar pelo Facebook**, conclua o consentimento, busque as contas e selecione a conta deste cliente. Apps em desenvolvimento e acesso a contas de terceiros dependem das permissões e da configuração aprovadas na Meta.
+4. O worker importa dados em nível de anúncio dos últimos 30 dias e repete a consulta a cada hora após uma sincronização bem-sucedida. Uma falha preserva os dados anteriores e pede nova tentativa no painel. Não há alterações de campanhas ou orçamento.
+5. Abra **Anúncios**. A associação usa o ID do anúncio recebido no WhatsApp; cliques e mensagens sem referência não são promovidos a conversões atribuídas. Valores usam a moeda da conta. Os nomes de anúncios são os mais recentes do período. Datas de investimento seguem o fuso da conta Meta; mensagens seguem o fuso do app.
+
+Um token expirado/revogado exige nova autorização. A desconexão remove o token local; a revogação definitiva também pode ser feita nas integrações do Facebook. Dataset, WABA e código de teste são opcionais na tela e servem apenas para conversões elegíveis, não para importar anúncios. `META_GRAPH_VERSION` fixa a versão usada (padrão `v25.0`, configurável). `META_REDIRECT_URI` é opcional para um callback canônico; `PUBLIC_BASE_URL` configura a origem dos webhooks.
 
 ## Implantação no EasyPanel
 
@@ -77,7 +105,7 @@ O Gunicorn não habilita access log. Em outros logs/proxies, evite registrar o c
 5. Se a instância já atende n8n, CRM ou outro sistema, preserve a integração existente: faça o fan-out no fluxo atual e mantenha o segredo restrito aos sistemas autorizados. Não substitua uma URL em uso sem analisar esse fluxo.
 6. Envie uma mensagem de teste pelo celular e confira seu estado na lista de webhooks e a conversa registrada. Depois responda pelo WhatsApp e confira a saída.
 
-O app não modifica a configuração Z-API nem envia mensagens por ela. Não precisa armazenar o token da instância ou o Client-Token. A autenticação de entrada é uma URL secreta e a verificação da instância/número; **não é assinatura criptográfica da Z-API**. Quem obtiver a URL pode falsificar callbacks. Rotacione em caso de exposição.
+Na Z-API tradicional, o app não modifica a configuração nem envia mensagens. Não precisa armazenar token da instância ou Client-Token. A autenticação de entrada tradicional é uma URL secreta e a verificação da instância/número; **não é assinatura criptográfica da Z-API**. Quem obtiver essa URL pode falsificar callbacks. Rotacione em caso de exposição. O receptor Omni usa o fluxo assinado descrito acima.
 
 Origem de anúncios usa `externalAdReply.sourceId` e `ctwaClid` quando fornecidos. O registro pode vir sem esses campos. O app nunca transforma FBCLID em CTWA Click ID nem atribui uma conversa só pela proximidade de horários.
 
@@ -97,7 +125,7 @@ O código é correlacionado somente na mesma instância e até 30 dias após o c
 
 O envio é opcional e feito somente após ação explícita do gestor na venda. A integração não está habilitada só porque a Z-API está conectada.
 
-No ambiente dos dois Apps, defina `META_GRAPH_VERSION` com uma versão suportada pela sua aplicação Meta, e:
+Você pode cadastrar as credenciais de conversão na tela Facebook / Meta do cliente. Alternativamente, no ambiente do serviço, defina `META_GRAPH_VERSION` com uma versão suportada pela sua aplicação Meta, e:
 
 ```dotenv
 META_CLIENTE_01_DATASET_ID=ID_DO_DATASET_BUSINESS_MESSAGING
@@ -128,6 +156,6 @@ O workflow em `.github/workflows/check.yml` executa os testes com PostgreSQL no 
 
 ## Próximas etapas do documento original
 
-Este é o MVP transacional. Ainda não inclui kanban, IA de vendas, OAuth/onboarding Meta/Google, gastos/ROAS dos anúncios, API pública/MCP, QR codes, pixel de navegador, webhooks de saída, relatórios assíncronos nem upload de conversões Google. Áudio/mídia não são baixados ou transcritos. Histórico anterior à conexão não é importado automaticamente. Alterações/exclusões e variantes de payload não documentadas precisam de validação adicional com a instância real.
+Este é o MVP transacional com integração de anúncios Meta. Ainda não inclui kanban, IA de vendas, onboarding Google, ROAS por anúncio, API pública/MCP, leitura de QR codes dentro do Rastro, pixel de navegador, webhooks de saída, relatórios assíncronos nem upload de conversões Google. A conexão por QR é feita no painel Omni. Áudio/mídia não são baixados ou transcritos. Histórico de mensagens anterior à conexão não é importado automaticamente. Alterações/exclusões e variantes de payload não documentadas precisam de validação adicional com a instância real. O registro do webhook e a autorização dos anúncios só podem ser confirmados com chaves válidas e uma mensagem real.
 
 Referências consultadas: [Django 5.2 LTS](https://www.djangoproject.com/download/), [deploy Django](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/), [webhooks Z-API](https://developer.z-api.io/webhooks/on-message-received-and-delivery), [payloads Z-API](https://developer.z-api.io/webhooks/on-message-received-examples), [serviços App EasyPanel](https://easypanel.io/docs/services/app), [CAPI Business Messaging](https://developers.facebook.com/docs/marketing-api/conversions-api/business-messaging/).

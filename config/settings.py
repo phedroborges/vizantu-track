@@ -74,4 +74,12 @@ X_FRAME_OPTIONS = 'DENY'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if not DEBUG else None
 DATA_UPLOAD_MAX_MEMORY_SIZE = 512 * 1024
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100
-META_GRAPH_VERSION = os.getenv('META_GRAPH_VERSION', '')
+META_GRAPH_VERSION = os.getenv('META_GRAPH_VERSION', 'v25.0')
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL', '').rstrip('/')
+META_REDIRECT_URI = os.getenv('META_REDIRECT_URI', '')
+LOGGING = {
+    'version': 1, 'disable_existing_loggers': False,
+    'filters': {'request_secrets': {'()': 'crm.logging.RedactRequestSecrets'}},
+    'handlers': {'local_server': {'class': 'logging.StreamHandler', 'filters': ['request_secrets']}},
+    'loggers': {'django.server': {'handlers': ['local_server'], 'level': 'INFO', 'propagate': False}},
+}

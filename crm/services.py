@@ -195,7 +195,16 @@ def record_sale(lead, amount, request_id, actor):
 
 def meta_config(account):
     prefix = 'META_' + account.integration_key + '_'
-    return {key.lower(): os.getenv(prefix + key, '') for key in ('DATASET_ID', 'ACCESS_TOKEN', 'WABA_ID', 'TEST_EVENT_CODE')}
+    config = {key.lower(): os.getenv(prefix + key, '') for key in ('DATASET_ID', 'ACCESS_TOKEN', 'WABA_ID', 'TEST_EVENT_CODE')}
+    from .models import MetaIntegration
+    from .integrations import unseal
+    integration = MetaIntegration.objects.filter(account=account).first()
+    if integration:
+        credentials = unseal(integration.credentials)
+        for key in config:
+            if credentials.get(key):
+                config[key] = credentials[key]
+    return config
 
 
 @transaction.atomic

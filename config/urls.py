@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth
 from django.urls import path
 from crm import views
+from crm import meta_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -19,4 +20,9 @@ urlpatterns = [
     path('a/<uuid:account_id>/export/', views.export_csv, name='export_csv'),
     path('r/<uuid:link_id>/', views.track, name='track'),
     path('hooks/zapi/<uuid:connection_id>/<str:token>/', views.zapi_webhook, name='zapi_webhook'),
+    path('hooks/omni/<uuid:connection_id>/<str:token>/', views.omni_webhook, name='omni_webhook'),
+    path('a/<uuid:account_id>/meta/', meta_views.meta_settings, name='meta_settings'),
+    path('a/<uuid:account_id>/meta/connect/', meta_views.meta_connect, name='meta_connect'),
+    path('integrations/meta/callback/', meta_views.meta_callback, name='meta_callback'),
+    path('a/<uuid:account_id>/ads/', meta_views.ads_report, name='ads_report'),
 ]

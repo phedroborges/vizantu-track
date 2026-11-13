@@ -1,12 +1,16 @@
 import csv
+import gzip
+import io
 import hashlib
 import hmac
 import json
 import secrets
 import uuid
+import zlib
 from datetime import timedelta
 
 from django.contrib import messages
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
@@ -20,7 +24,8 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .forms import AccountForm, ConnectionForm, LinkForm, SaleForm, StageForm
+from .forms import AccountForm, ConnectionForm, LinkForm, SaleForm, StageForm, OmniForm
+from .integrations import omni_call, register_omni, seal, unseal, verify_omni
 from .models import (Account, Attribution, Audit, Click, Connection, Dispatch, Lead,
                      Membership, Sale, Stage, TrackableLink, WebhookEvent)
 from .services import (change_stage, create_account, queue_conversion, record_sale,
@@ -212,7 +217,34 @@ def connections(request, account_id):
     webhook_url = None
     if request.method == 'POST':
         action = request.POST.get('action', 'create')
-        if action in ('rotate', 'toggle'):
+        if action in ('omni_save', 'omni_register', 'omni_check'):
+            conn = get_object_or_404(account.connections, pk=request.POST.get('connection_id'), provider='omni')
+            try:
+                if action == 'omni_save':
+                    omni_form = OmniForm(request.POST)
+                    if not omni_form.is_valid():
+                        raise ValidationError('Secret Key inválida.')
+                    values = unseal(conn.credentials)
+                    if omni_form.cleaned_data['secret_key']:
+                        values['secret_key'] = omni_form.cleaned_data['secret_key']
+                    conn.credentials = seal(values)
+                    if omni_form.cleaned_data['phone']:
+                        conn.phone = omni_form.cleaned_data['phone']
+                    conn.save(update_fields=['credentials', 'phone'])
+                    messages.success(request, 'Chave Omni salva no servidor.')
+                elif action == 'omni_register':
+                    if not conn.phone:
+                        raise ValidationError('Informe o telefone do canal antes de registrar o webhook.')
+                    webhook_url = register_omni(conn, settings.PUBLIC_BASE_URL, request.user)
+                    messages.success(request, 'Webhook Omni registrado em formato Z_API, com assinatura e autenticação. Outros webhooks foram preservados.')
+                else:
+                    values = unseal(conn.credentials)
+                    result = omni_call(conn.instance_id, values.get('secret_key', ''), '/zapi/qr-code/image')
+                    messages.success(request, 'WhatsApp conectado.' if result.get('connected') else 'O canal ainda precisa ser conectado no painel Omni.')
+            except ValidationError as exc:
+                messages.error(request, '; '.join(exc.messages))
+            form = ConnectionForm()
+        elif action in ('rotate', 'toggle'):
             conn = get_object_or_404(account.connections, pk=request.POST.get('connection_id'))
             if action == 'toggle':
                 conn.active = not conn.active
@@ -220,7 +252,13 @@ def connections(request, account_id):
                 Audit.objects.create(account=account, actor=request.user, action='connection.toggled', object_id=str(conn.id))
                 return redirect('connections', account_id=account.id)
             token = rotate_webhook(conn, request.user)
-            webhook_url = request.build_absolute_uri(reverse('zapi_webhook', args=[conn.id, token]))
+            route = 'omni_webhook' if conn.provider == 'omni' else 'zapi_webhook'
+            webhook_url = request.build_absolute_uri(reverse(route, args=[conn.id, token]))
+            if conn.provider == 'omni':
+                values = unseal(conn.credentials)
+                values['webhook_token'] = token
+                conn.credentials = seal(values)
+                conn.save(update_fields=['credentials'])
         elif action == 'create' and form.is_valid():
             with transaction.atomic():
                 conn = form.save(commit=False)
@@ -228,7 +266,11 @@ def connections(request, account_id):
                 conn.token_hash = hashlib.sha256(secrets.token_bytes(32)).hexdigest()
                 conn.save()
                 token = rotate_webhook(conn, request.user)
-                webhook_url = request.build_absolute_uri(reverse('zapi_webhook', args=[conn.id, token]))
+                route = 'omni_webhook' if conn.provider == 'omni' else 'zapi_webhook'
+                webhook_url = request.build_absolute_uri(reverse(route, args=[conn.id, token]))
+                if conn.provider == 'omni':
+                    conn.credentials = seal({'webhook_token': token})
+                    conn.save(update_fields=['credentials'])
             form = ConnectionForm()
     response = page(request, 'crm/connections.html', account, role, form=form,
         connections=account.connections.all(), webhook_url=webhook_url,
@@ -305,6 +347,8 @@ def export_csv(request, account_id):
 def track(request, link_id):
     link = get_object_or_404(TrackableLink.objects.select_related('connection__account'),
         pk=link_id, active=True, connection__active=True, connection__account__active=True)
+    if not link.connection.phone:
+        return HttpResponse('A conexão ainda precisa de um telefone válido.', status=409)
     values = {key: request.GET.get(param, default)[:limit] for key, param, default, limit in [
         ('source', 'utm_source', link.source, 200), ('medium', 'utm_medium', link.medium, 200),
         ('campaign', 'utm_campaign', link.campaign, 200), ('content', 'utm_content', '', 200),
@@ -321,7 +365,7 @@ def track(request, link_id):
 @csrf_exempt
 @require_POST
 def zapi_webhook(request, connection_id, token):
-    conn = get_object_or_404(Connection.objects.select_related('account'), pk=connection_id, active=True, account__active=True)
+    conn = get_object_or_404(Connection.objects.select_related('account'), pk=connection_id, provider='zapi', active=True, account__active=True)
     if not hmac.compare_digest(conn.token_hash, hashlib.sha256(token.encode()).hexdigest()):
         return JsonResponse({'error': 'unauthorized'}, status=401)
     if request.content_type != 'application/json':
@@ -335,6 +379,45 @@ def zapi_webhook(request, connection_id, token):
         return JsonResponse({'error': 'invalid_json'}, status=400)
     if not isinstance(payload, dict) or payload.get('instanceId') != conn.instance_id:
         return JsonResponse({'error': 'instance_mismatch'}, status=400)
+    if payload.get('connectedPhone') and payload['connectedPhone'] != conn.phone:
+        return JsonResponse({'error': 'phone_mismatch'}, status=400)
+    with transaction.atomic():
+        _, created = WebhookEvent.objects.get_or_create(connection=conn, digest=hashlib.sha256(raw).hexdigest(), defaults={'payload': payload})
+        Connection.objects.filter(pk=conn.pk).update(last_received_at=timezone.now())
+    return JsonResponse({'received': True, 'duplicate': not created})
+
+
+@csrf_exempt
+@require_POST
+def omni_webhook(request, connection_id, token):
+    conn = get_object_or_404(Connection.objects.select_related('account'), pk=connection_id,
+                            provider='omni', active=True, account__active=True)
+    if not hmac.compare_digest(conn.token_hash, hashlib.sha256(token.encode()).hexdigest()):
+        return JsonResponse({'error': 'unauthorized'}, status=401)
+    credentials = unseal(conn.credentials)
+    if not hmac.compare_digest(request.headers.get('Authorization', '').encode(), ('Bearer ' + token).encode()):
+        return JsonResponse({'error': 'unauthorized'}, status=401)
+    if request.content_type != 'application/json':
+        return JsonResponse({'error': 'expected_json'}, status=415)
+    try:
+        raw = request.body
+        encoding = request.headers.get('Content-Encoding', '').lower()
+        if encoding == 'gzip':
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+                raw = stream.read(512 * 1024 + 1)
+        elif encoding not in ('', 'identity'):
+            return JsonResponse({'error': 'unsupported_encoding'}, status=415)
+        if len(raw) > 512 * 1024:
+            return JsonResponse({'error': 'payload_too_large'}, status=413)
+        signing_secret = credentials.get('signing_secret')
+        if not signing_secret or not verify_omni(raw, request.headers.get('X-Webhook-Signature', ''),
+                                               request.headers.get('X-Idempotency-Key', ''), signing_secret):
+            return JsonResponse({'error': 'invalid_signature'}, status=401)
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError, OSError, EOFError, zlib.error):
+        return JsonResponse({'error': 'invalid_json'}, status=400)
+    if not isinstance(payload, dict) or payload.get('instanceId') != conn.instance_id:
+        return JsonResponse({'error': 'channel_mismatch_use_Z_API_format'}, status=400)
     if payload.get('connectedPhone') and payload['connectedPhone'] != conn.phone:
         return JsonResponse({'error': 'phone_mismatch'}, status=400)
     with transaction.atomic():

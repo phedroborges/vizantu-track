@@ -5,4 +5,5 @@ tzdata==2026.6
 psycopg[binary]==3.3.9
 gunicorn==25.3.0
 packaging==26.3
+cryptography==50.0.2
 whitenoise==6.12.0

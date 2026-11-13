@@ -1,0 +1,19 @@
+{% extends 'crm/base.html' %}{% block content %}
+<div class="page-heading"><div><div class="eyebrow">Integrações do cliente</div><h1>Facebook / Meta Ads</h1><p class="muted">Conecte a conta de anúncios para consultar campanhas, investimento e conversas atribuídas.</p></div><a class="button secondary" href="{% url 'ads_report' account.id %}">Ver anúncios →</a></div>
+<div class="split"><div>
+<section class="panel"><h2>1. Autorizar acesso aos anúncios</h2>
+<p>Estado: <strong>{% if has_token %}token cadastrado{% else %}aguardando autorização{% endif %}</strong>{% if integration.token_expires_at %} · expira em {{ integration.token_expires_at|date:'d/m/Y H:i' }}{% endif %}</p>
+<p class="muted">No painel do app da Meta, cadastre este endereço em URIs de redirecionamento OAuth válidos:</p><code class="code">{{ callback }}</code>
+<p class="muted spaced">A autorização solicita leitura de anúncios (ads_read). Sua conta precisa ter acesso aos ativos; clientes externos também dependem das permissões e do modo de publicação do app na Meta.</p>
+<form method="post" action="{% url 'meta_connect' account.id %}">{% csrf_token %}<button {% if not oauth_ready %}disabled{% endif %}>Autorizar pelo Facebook</button></form>
+{% if not oauth_ready %}<p class="muted spaced">Cadastre App ID e App Secret ao lado para habilitar a autorização. Você também pode usar um token de anúncios existente.</p>{% endif %}
+</section>
+<section class="panel"><h2>2. Escolher a conta deste cliente</h2>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="list"><button class="secondary" {% if not has_token %}disabled{% endif %}>Buscar contas autorizadas</button></form>
+{% if ad_accounts != None %}<div class="spaced">{% for item in ad_accounts %}<form method="post" class="sale">{% csrf_token %}<input type="hidden" name="action" value="select"><input type="hidden" name="ad_account_id" value="{{ item.id }}"><p><strong>{{ item.name }}</strong><br><span class="muted">{{ item.id }} · {{ item.currency }}</span></p><button class="secondary small">Usar esta conta</button></form>{% empty %}<p>Nenhuma conta autorizada. Confira os ativos acessíveis ao usuário e a permissão ads_read do token.</p>{% endfor %}</div>{% endif %}
+{% if integration.ad_account_id %}<div class="notice spaced"><strong>{{ integration.ad_account_name }}</strong><br>{{ integration.ad_account_id }} · {{ integration.currency }}<p>Última sincronização: {{ integration.last_synced_at|date:'d/m/Y H:i'|default:'nenhuma' }}</p><p>{{ integration.sync_result }}</p></div>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="sync"><button {% if integration.sync_status == 'running' or integration.sync_status == 'pending' %}disabled{% endif %}>Sincronizar últimos 30 dias</button></form>{% endif %}
+</section>
+{% if has_token %}<section class="panel"><h2>Remover acesso do Rastro</h2><p class="muted">Remove o token salvo e mantém o histórico. Para revogar o acesso no provedor, use também as configurações de integrações do Facebook.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="disconnect"><button class="secondary">Desconectar Facebook</button></form></section>{% endif %}
+</div><section class="panel form" style="align-self:start"><h2>Configuração privada</h2><p class="muted">Exclusiva deste cliente. Segredos ficam criptografados no banco e não são devolvidos ao navegador. Campos de senha vazios mantêm o valor existente.</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">{{ form.as_p }}<button>Salvar configuração</button></form><p class="muted spaced">Dataset e WABA só são usados no envio de conversões elegíveis. Não são necessários para importar anúncios. A conexão do WhatsApp por QR Code não fornece automaticamente uma WABA.</p></section></div>
+{% endblock %}

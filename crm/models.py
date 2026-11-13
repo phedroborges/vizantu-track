@@ -37,10 +37,13 @@ class Connection(models.Model):
     account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name='connections')
     name = models.CharField('Nome', max_length=100)
     instance_id = models.CharField('ID da instância Z-API', max_length=120, unique=True)
-    phone = models.CharField('WhatsApp com DDI', max_length=15, validators=[phone_validator])
+    phone = models.CharField('WhatsApp com DDI', max_length=15, validators=[phone_validator], blank=True)
     token_hash = models.CharField(max_length=64, editable=False)
     active = models.BooleanField(default=True)
     last_received_at = models.DateTimeField(null=True, blank=True)
+    provider = models.CharField(max_length=12, default='zapi', choices=[('zapi', 'Z-API tradicional'), ('omni', 'Z-API Omni')])
+    credentials = models.TextField(blank=True, editable=False)
+    webhook_id = models.CharField(max_length=120, blank=True)
 
     def __str__(self):
         return f'{self.account} / {self.name}'
@@ -191,3 +194,34 @@ class LoginAttempt(models.Model):
     key = models.CharField(primary_key=True, max_length=64)
     failures = models.PositiveIntegerField(default=0)
     window_start = models.DateTimeField(default=timezone.now)
+
+
+class MetaIntegration(models.Model):
+    account = models.OneToOneField(Account, on_delete=models.CASCADE, related_name='meta')
+    credentials = models.TextField(blank=True, editable=False)
+    ad_account_id = models.CharField(max_length=80, blank=True)
+    ad_account_name = models.CharField(max_length=200, blank=True)
+    currency = models.CharField(max_length=3, blank=True)
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    sync_status = models.CharField(max_length=12, default='idle')
+    sync_result = models.CharField(max_length=300, blank=True)
+    sync_started_at = models.DateTimeField(null=True)
+    last_synced_at = models.DateTimeField(null=True)
+
+
+class AdInsight(models.Model):
+    integration = models.ForeignKey(MetaIntegration, on_delete=models.CASCADE, related_name='insights')
+    ad_account_id = models.CharField(max_length=80)
+    date = models.DateField()
+    ad_id = models.CharField(max_length=80)
+    ad_name = models.CharField(max_length=500)
+    adset_id = models.CharField(max_length=80)
+    adset_name = models.CharField(max_length=500)
+    campaign_id = models.CharField(max_length=80)
+    campaign_name = models.CharField(max_length=500)
+    spend = models.DecimalField(max_digits=16, decimal_places=4)
+    impressions = models.PositiveBigIntegerField(default=0)
+    clicks = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['integration', 'ad_account_id', 'date', 'ad_id'], name='insight_daily_ad')]
