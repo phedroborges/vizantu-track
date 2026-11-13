@@ -43,6 +43,10 @@ def workspace_settings(request):
             messages.success(request, 'Integração WhatsApp salva. Os clientes já podem iniciar as modalidades habilitadas.')
             return redirect('whatsapp_workspace')
     config = omni_workspace()
+    if config['secret_key']:
+        form.fields['secret_key'].widget.attrs.update({
+            'placeholder': '••••••••••••••••', 'autocomplete': 'new-password'})
+        form.fields['secret_key'].help_text = 'Chave salva. Digite uma nova chave somente se quiser substituí-la.'
     return render(request, 'crm/whatsapp_workspace.html', {'form': form, 'has_secret': bool(config['secret_key']),
         'has_public': bool(config['public_key']), 'accounts': available_accounts(request.user),
         'sdk_origin': request.build_absolute_uri('/').rstrip('/')})
