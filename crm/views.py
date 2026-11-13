@@ -27,7 +27,7 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 from .forms import AccountForm, ConnectionForm, LinkForm, SaleForm, StageForm, OmniForm
 from .integrations import omni_call, register_omni, seal, unseal, verify_omni
 from .models import (Account, Attribution, Audit, Click, Connection, Dispatch, Lead,
-                     Membership, Sale, Stage, TrackableLink, WebhookEvent)
+                     Membership, Sale, Stage, TrackableLink, WebhookEvent, MetaIntegration)
 from .services import (change_stage, create_account, queue_conversion, record_sale,
                        rotate_webhook)
 
@@ -88,8 +88,15 @@ def health(request):
 
 @login_required
 def home(request):
-    accounts = available_accounts(request.user).order_by('name')
-    return render(request, 'crm/home.html', {'accounts': accounts})
+    accounts = list(available_accounts(request.user).select_related('meta').annotate(
+        number_count=Count('connections', filter=Q(connections__active=True, connections__last_received_at__isnull=False), distinct=True),
+        lead_count=Count('connections__leads', distinct=True),
+        tracked_count=Count('connections__leads__attributions__lead_id', distinct=True),
+        link_count=Count('connections__links', filter=Q(connections__links__active=True, connections__active=True) & ~Q(connections__phone=''), distinct=True)
+    ).order_by('name'))
+    return render(request, 'crm/home.html', {'accounts': accounts,
+        'clients': [x for x in accounts if x.integration_key not in ('DEMO_AURORA', 'DEMO_HORIZONTE')],
+        'demos': [x for x in accounts if x.integration_key in ('DEMO_AURORA', 'DEMO_HORIZONTE')]})
 
 
 @login_required
@@ -121,6 +128,9 @@ def dashboard(request, account_id):
         tracked_percent=round(tracked / max(1, total) * 100), unknown=total - tracked,
         revenue=sales.aggregate(value=Sum('amount'))['value'] or 0, sales_count=sales.count(),
         stages=stages, sources=sources, latest=lead_query(account)[:6],
+        whatsapp_ready=account.connections.filter(active=True, last_received_at__isnull=False).exists(),
+        tracking_ready=TrackableLink.objects.filter(connection__account=account, connection__active=True, active=True).exclude(connection__phone='').exists(),
+        meta_synced=MetaIntegration.objects.filter(account=account, last_synced_at__isnull=False).exclude(ad_account_id='').exists(),
         pending=WebhookEvent.objects.filter(connection__account=account, status='pending').count(),
         failed=WebhookEvent.objects.filter(connection__account=account, status='failed').count(),
         dispatches=Dispatch.objects.filter(sale__lead__connection__account=account).select_related('sale__lead').order_by('-updated_at')[:6])
@@ -205,13 +215,17 @@ def links(request, account_id):
     rows = TrackableLink.objects.filter(connection__account=account).select_related('connection').annotate(
         click_count=Count('clicks', distinct=True), match_count=Count('clicks', filter=Q(clicks__matched_lead__isnull=False), distinct=True))
     for link in rows:
-        link.url = request.build_absolute_uri(reverse('track', args=[link.id]))
-    return page(request, 'crm/links.html', account, role, form=form, links=rows)
+        path = reverse('track', args=[link.id])
+        link.url = settings.PUBLIC_BASE_URL + path if settings.PUBLIC_BASE_URL else request.build_absolute_uri(path)
+    return page(request, 'crm/links.html', account, role, form=form, links=rows,
+                has_destination=form.fields['connection'].queryset.exists(), public_links=bool(settings.PUBLIC_BASE_URL))
 
 
 @login_required
 @require_http_methods(['GET', 'POST'])
-def connections(request, account_id):
+def connection_technical(request, account_id):
+    if not request.user.is_superuser:
+        raise PermissionDenied
     account, role = access(request, account_id, roles=['manager'])
     form = ConnectionForm(request.POST or None)
     webhook_url = None
@@ -272,7 +286,7 @@ def connections(request, account_id):
                     conn.credentials = seal({'webhook_token': token})
                     conn.save(update_fields=['credentials'])
             form = ConnectionForm()
-    response = page(request, 'crm/connections.html', account, role, form=form,
+    response = page(request, 'crm/connection_technical.html', account, role, form=form,
         connections=account.connections.all(), webhook_url=webhook_url,
         events=WebhookEvent.objects.filter(connection__account=account).select_related('connection').order_by('-created_at')[:15])
     response['Cache-Control'] = 'no-store'
@@ -418,9 +432,24 @@ def omni_webhook(request, connection_id, token):
         return JsonResponse({'error': 'invalid_json'}, status=400)
     if not isinstance(payload, dict) or payload.get('instanceId') != conn.instance_id:
         return JsonResponse({'error': 'channel_mismatch_use_Z_API_format'}, status=400)
-    if payload.get('connectedPhone') and payload['connectedPhone'] != conn.phone:
-        return JsonResponse({'error': 'phone_mismatch'}, status=400)
     with transaction.atomic():
+        conn = Connection.objects.select_for_update().get(pk=conn.pk)
+        if payload.get('connectedPhone'):
+            from .models import phone_validator
+            if not isinstance(payload['connectedPhone'], str):
+                return JsonResponse({'error': 'invalid_connected_phone'}, status=400)
+            try:
+                phone_validator(payload['connectedPhone'])
+            except (ValidationError, TypeError):
+                return JsonResponse({'error': 'invalid_connected_phone'}, status=400)
+            if conn.phone and payload['connectedPhone'] != conn.phone:
+                return JsonResponse({'error': 'phone_mismatch'}, status=400)
+            if not conn.phone:
+                conn.phone = payload['connectedPhone']
+                conn.setup_status = 'connected'
+                conn.save(update_fields=['phone', 'setup_status'])
+                TrackableLink.objects.get_or_create(connection=conn, name='Link principal', defaults={
+                    'source': 'link', 'medium': 'whatsapp', 'text': 'Olá! Quero saber mais.'})
         _, created = WebhookEvent.objects.get_or_create(connection=conn, digest=hashlib.sha256(raw).hexdigest(), defaults={'payload': payload})
         Connection.objects.filter(pk=conn.pk).update(last_received_at=timezone.now())
     return JsonResponse({'received': True, 'duplicate': not created})

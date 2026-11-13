@@ -24,11 +24,11 @@
       <a href="{% url 'leads' account.id %}" {% if request.resolver_match.url_name == 'leads' or request.resolver_match.url_name == 'lead_detail' %}class="current" aria-current="page"{% endif %}>☰ &nbsp; Conversas</a>
       <a href="{% url 'links' account.id %}" {% if request.resolver_match.url_name == 'links' %}class="current" aria-current="page"{% endif %}>↗ &nbsp; Links rastreáveis</a>
       <a href="{% url 'ads_report' account.id %}" {% if request.resolver_match.url_name == 'ads_report' %}class="current" aria-current="page"{% endif %}>▤ &nbsp; Anúncios</a>
-      {% if is_manager %}<a href="{% url 'connections' account.id %}" {% if request.resolver_match.url_name == 'connections' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; WhatsApp / Z-API</a>
+      {% if is_manager %}<a href="{% url 'connections' account.id %}" {% if request.resolver_match.url_name == 'connections' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; WhatsApp</a>
       <a href="{% url 'meta_settings' account.id %}" {% if request.resolver_match.url_name == 'meta_settings' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; Facebook / Meta</a>
       <a href="{% url 'account_settings' account.id %}" {% if request.resolver_match.url_name == 'account_settings' %}class="current" aria-current="page"{% endif %}>⚙ &nbsp; Equipe e funil</a>{% endif %}
       {% else %}<a href="{% url 'home' %}" class="current">◫ &nbsp; Meus clientes</a>{% endif %}
-      {% if user.is_superuser %}<a href="/admin/">↗ &nbsp; Administração</a>{% endif %}
+      {% if user.is_superuser %}<a href="{% url 'whatsapp_workspace' %}">⚙ &nbsp; Integração WhatsApp</a><a href="/admin/">↗ &nbsp; Administração</a>{% endif %}
     </nav>
     <div class="bottom"><span class="dot"></span>Da conversa ao resultado.<br><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" class="small">Sair da conta</button></form></div>
   </aside>
@@ -41,4 +41,5 @@
   </div>
 </div>
 {% endblock %}
+{% block scripts %}{% endblock %}
 </body></html>

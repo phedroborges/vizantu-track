@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import re
+import os
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError, URLError
@@ -18,7 +19,18 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
-from .models import AdInsight, Audit, MetaIntegration
+from .models import AdInsight, Audit, MetaIntegration, OmniWorkspace
+
+
+def omni_workspace():
+    config = OmniWorkspace.objects.filter(pk=1).first()
+    values = unseal(config.credentials) if config else {}
+    return {'secret_key': os.getenv('OMNI_SECRET_KEY') or values.get('secret_key', ''),
+            'public_key': os.getenv('OMNI_PUBLIC_KEY') or values.get('public_key', '')}
+
+
+def omni_secret(connection):
+    return unseal(connection.credentials).get('secret_key') or omni_workspace()['secret_key']
 
 
 def seal(data):
@@ -76,7 +88,8 @@ def register_omni(connection, public_url, actor):
     if url.scheme != 'https' or not url.hostname or url.username or url.password or url.path not in ('', '/') or url.query or url.fragment:
         raise ValidationError('Informe somente a origem HTTPS pública do app, sem caminho.')
     secrets = unseal(connection.credentials)
-    if not secrets.get('secret_key'):
+    secret_key = omni_secret(connection)
+    if not secret_key:
         raise ValidationError('Cadastre a Secret Key do workspace Omni em Conexões.')
     # Preserve other integrations. Updating this ID never alters a third-party webhook.
     if secrets.get('webhook_token'):
@@ -90,10 +103,10 @@ def register_omni(connection, public_url, actor):
     connection.credentials = seal(secrets)
     connection.save(update_fields=['credentials'])
     data = {'url': destination, 'description': 'Rastro — rastreamento comercial',
-            'events': ['RECEIVED_AND_DELIVERY'], 'payloadFormat': 'Z_API',
+            'events': ['MESSAGE_RECEIVED', 'MESSAGE_DELIVERY'] if connection.mode == 'coexistence' else ['RECEIVED_AND_DELIVERY'], 'payloadFormat': 'Z_API',
             'signing': True, 'auth': {'type': 'BEARER', 'token': token}}
     suffix = '/webhooks' + ('/' + connection.webhook_id if connection.webhook_id else '')
-    result = omni_call(connection.instance_id, secrets['secret_key'], suffix, data,
+    result = omni_call(connection.instance_id, secret_key, suffix, data,
                        'PATCH' if connection.webhook_id else 'POST')
     if not result.get('id') or not result.get('secret'):
         raise ValidationError('O Omni não retornou ID e segredo de assinatura. Confira o webhook no painel antes de tentar novamente.')

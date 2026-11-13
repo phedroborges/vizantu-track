@@ -1,5 +1,6 @@
 """Local tunnel: signed hooks and a fixed OAuth return to the local browser session."""
 import http.client
+from http.client import HTTPConnection
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -8,6 +9,9 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parts = urlsplit(self.path)
+        if re.fullmatch(r'/r/[0-9a-f-]{36}/', parts.path) and len(parts.query) <= 8192:
+            self.relay_link()
+            return
         if parts.path != '/integrations/meta/callback/':
             self.send_error(404)
             return
@@ -31,6 +35,27 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', '0')
         self.end_headers()
 
+    def relay_link(self):
+        upstream = HTTPConnection('127.0.0.1', 8765, timeout=15)
+        try:
+            upstream.request('GET', self.path)
+            result = upstream.getresponse()
+            location = result.getheader('Location', '')
+            destination = urlsplit(location)
+            if result.status == 302 and destination.scheme == 'https' and destination.netloc == 'wa.me':
+                self.send_response(302)
+                self.send_header('Location', location)
+                self.send_header('Content-Length', '0')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Referrer-Policy', 'no-referrer')
+                self.end_headers()
+            else:
+                self.send_error(404 if result.status == 404 else 502)
+        except (OSError, http.client.HTTPException):
+            self.send_error(502)
+        finally:
+            upstream.close()
+
     def do_POST(self):
         if not re.fullmatch(r'/hooks/omni/[0-9a-f-]{36}/[A-Za-z0-9_-]{20,100}/', self.path):
             self.send_error(404)
@@ -43,7 +68,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(413)
             return
         self.connection.settimeout(15)
-        upstream = http.client.HTTPConnection('127.0.0.1', 8765, timeout=15)
+        upstream = HTTPConnection('127.0.0.1', 8765, timeout=15)
         try:
             body = self.rfile.read(length)
             if len(body) != length:

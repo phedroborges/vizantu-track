@@ -3,6 +3,7 @@ from django.contrib.auth import views as auth
 from django.urls import path
 from crm import views
 from crm import meta_views
+from crm import whatsapp_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -15,7 +16,13 @@ urlpatterns = [
     path('a/<uuid:account_id>/leads/', views.leads, name='leads'),
     path('a/<uuid:account_id>/leads/<uuid:lead_id>/', views.lead_detail, name='lead_detail'),
     path('a/<uuid:account_id>/links/', views.links, name='links'),
-    path('a/<uuid:account_id>/connections/', views.connections, name='connections'),
+    path('a/<uuid:account_id>/connections/', whatsapp_views.connections, name='connections'),
+    path('a/<uuid:account_id>/connections/technical/', views.connection_technical, name='connection_technical'),
+    path('settings/whatsapp/', whatsapp_views.workspace_settings, name='whatsapp_workspace'),
+    path('a/<uuid:account_id>/connections/<uuid:connection_id>/connect/', whatsapp_views.connect_page, name='whatsapp_connect'),
+    path('a/<uuid:account_id>/connections/<uuid:connection_id>/qr/', whatsapp_views.qr_code, name='whatsapp_qr'),
+    path('a/<uuid:account_id>/connections/<uuid:connection_id>/finish/', whatsapp_views.finish_coexistence, name='whatsapp_finish'),
+    path('a/<uuid:account_id>/connections/<uuid:connection_id>/prepare/', whatsapp_views.retry_setup, name='whatsapp_retry'),
     path('a/<uuid:account_id>/settings/', views.account_settings, name='account_settings'),
     path('a/<uuid:account_id>/export/', views.export_csv, name='export_csv'),
     path('r/<uuid:link_id>/', views.track, name='track'),

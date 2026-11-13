@@ -44,6 +44,8 @@ class Connection(models.Model):
     provider = models.CharField(max_length=12, default='zapi', choices=[('zapi', 'Z-API tradicional'), ('omni', 'Z-API Omni')])
     credentials = models.TextField(blank=True, editable=False)
     webhook_id = models.CharField(max_length=120, blank=True)
+    mode = models.CharField(max_length=12, default='qr', choices=[('qr', 'QR Code'), ('coexistence', 'Coexistência')])
+    setup_status = models.CharField(max_length=20, default='pending')
 
     def __str__(self):
         return f'{self.account} / {self.name}'
@@ -207,6 +209,11 @@ class MetaIntegration(models.Model):
     sync_result = models.CharField(max_length=300, blank=True)
     sync_started_at = models.DateTimeField(null=True)
     last_synced_at = models.DateTimeField(null=True)
+
+
+class OmniWorkspace(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    credentials = models.TextField(blank=True, editable=False)
 
 
 class AdInsight(models.Model):

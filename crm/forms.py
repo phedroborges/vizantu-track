@@ -1,8 +1,13 @@
 from django import forms
+import uuid
 from .models import Account, Connection, TrackableLink, Sale, Stage
 
 
 class AccountForm(forms.ModelForm):
+    integration_key = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    def clean_integration_key(self):
+        return self.cleaned_data.get('integration_key') or 'CLIENTE_' + uuid.uuid4().hex[:12].upper()
     class Meta:
         model = Account
         fields = ['name', 'integration_key']
@@ -36,6 +41,17 @@ class OmniForm(forms.Form):
         return value
 
 
+class WhatsAppConnectForm(forms.Form):
+    request_id = forms.UUIDField(widget=forms.HiddenInput)
+    name = forms.CharField(label='Nome da conexão', max_length=100, initial='WhatsApp principal')
+    mode = forms.ChoiceField(choices=[('qr', 'QR Code'), ('coexistence', 'Coexistência')], widget=forms.RadioSelect, initial='qr')
+
+
+class OmniWorkspaceForm(forms.Form):
+    secret_key = forms.CharField(label='Secret Key do workspace Omni', max_length=2000, required=False, widget=forms.PasswordInput)
+    public_key = forms.CharField(label='Public Key do SDK (necessária para Coexistência)', max_length=2000, required=False)
+
+
 class MetaForm(forms.Form):
     app_id = forms.CharField(label='App ID do Facebook', max_length=80, required=False)
     app_secret = forms.CharField(label='App Secret', max_length=2000, required=False, widget=forms.PasswordInput)
@@ -57,11 +73,14 @@ class LinkForm(forms.ModelForm):
     class Meta:
         model = TrackableLink
         fields = ['connection', 'name', 'text', 'source', 'medium', 'campaign']
-        labels = {'connection': 'WhatsApp de destino'}
+        labels = {'connection': 'WhatsApp de destino', 'name': 'Nome do link',
+                  'source': 'Onde você vai divulgar? (ex.: instagram, site, indicação)',
+                  'text': 'Mensagem que a pessoa verá no WhatsApp', 'campaign': 'Nome da campanha (opcional)',
+                  'medium': 'Meio (opcional, ex.: bio, cpc)'}
 
     def __init__(self, *args, account, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['connection'].queryset = account.connections.filter(active=True)
+        self.fields['connection'].queryset = account.connections.filter(active=True).exclude(phone='')
 
 
 class SaleForm(forms.ModelForm):

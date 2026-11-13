@@ -1,5 +1,6 @@
 from http.server import ThreadingHTTPServer
 from threading import Thread
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
@@ -50,3 +51,17 @@ class ProxyTests(SimpleTestCase):
                              ('/login/', 404), ('/admin/', 404), ('/', 404)]:
             with self.subTest(path=path), self.response(path) as response:
                 self.assertEqual(response.code, status)
+
+    @patch('webhook_proxy.HTTPConnection')
+    def test_public_tracking_link_forwards_query_but_only_redirects_to_whatsapp(self, connection):
+        upstream = connection.return_value.getresponse.return_value
+        upstream.status = 302
+        upstream.getheader.return_value = 'https://wa.me/5511999999999?text=Hello'
+        path = '/r/01234567-0123-0123-0123-012345678901/?utm_source=instagram'
+        with self.response(path) as response:
+            self.assertEqual(response.code, 302)
+            self.assertTrue(response.headers['Location'].startswith('https://wa.me/'))
+        connection.return_value.request.assert_called_with('GET', path)
+        upstream.getheader.return_value = 'https://evil.example'
+        with self.response(path) as response:
+            self.assertEqual(response.code, 502)

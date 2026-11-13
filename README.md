@@ -5,7 +5,7 @@ Aplicação própria de atribuição e acompanhamento comercial de conversas do 
 ## O que está implementado
 
 - Clientes separados, usuários e perfis gestor, operador e leitura.
-- Múltiplas instâncias Z-API por cliente.
+- Múltiplos números por cliente, com onboarding por QR Code e Coexistência e configuração técnica reservada à administração.
 - Z-API Omni: configuração de chave por canal e registro/atualização do próprio webhook com formato `Z_API`, Bearer e assinatura HMAC; gzip com limite de expansão e deduplicação.
 - Facebook por cliente: credenciais criptografadas, OAuth com `ads_read`, seleção de conta autorizada, importação diária dos últimos 30 dias e atualização a cada hora pelo worker.
 - Relatório por anúncio com campanha, conjunto, investimento, impressões, cliques e custo por contato identificado no WhatsApp.
@@ -44,6 +44,13 @@ Use somente um worker com SQLite. Produção exige PostgreSQL. A demonstração 
 
 ## Z-API Omni
 
+1. A administração cadastra uma vez a Secret Key e, para Coexistência, a Public Key em **Integração WhatsApp** (`/settings/whatsapp/`). Alternativamente, use `OMNI_SECRET_KEY` e `OMNI_PUBLIC_KEY` no ambiente (têm precedência). Chaves ficam criptografadas e a tela é restrita a superusuários. Para Coexistência, libere a origem do app em Configurações da SDK no Omni.
+2. O gestor do cliente escolhe **Escanear QR Code** ou **Usar Coexistência** na tela WhatsApp, e informa apenas o nome da conexão. O backend cria o canal e prepara seu webhook. A mesma tentativa não cria canais repetidos. Falhas ambíguas exigem conferência administrativa; não há compra de assinatura nem desconexão automática.
+3. QR Code aparece dentro do Rastro, é buscado pelo servidor e atualizado enquanto a página está visível. A Secret Key nunca vai ao navegador. Coexistência usa o SDK oficial `@omnizapi/connect@1.1.1`, distribuído localmente com licença MIT. Apenas Public Key e canal chegam ao SDK; o backend finaliza a autorização. Retornos de Cloud API sem coexistência são recusados.
+4. O telefone é aprendido no primeiro webhook autenticado, assinado e pertencente ao canal. O Rastro prepara o **Link principal** nesse momento. O fluxo real de criação/pareamento precisa das chaves válidas do workspace e a Coexistência depende da elegibilidade na Meta.
+
+Para conexões antigas, a administração pode usar **Diagnóstico técnico deste cliente**, preservando os canais e webhooks existentes. O fluxo manual legado continua disponível ali:
+
 1. Conecte o número no painel Omni por WhatsApp Web/QR Code.
 2. Em WhatsApp / Z-API, cadastre uma conexão com provedor **Z-API Omni**, o ID do canal e o telefone conectado.
 3. Salve a **Secret Key do workspace** (Segurança → Credenciais da API). O token exibido no canal não substitui essa chave.
@@ -51,7 +58,7 @@ Use somente um worker com SQLite. Produção exige PostgreSQL. A demonstração 
 5. Use **Registrar webhook Omni**. O app adiciona um webhook `RECEIVED_AND_DELIVERY` em formato `Z_API`, com Bearer e HMAC. Outros webhooks permanecem intactos. Não use formato `DEFAULT` nesse receptor.
 6. Envie uma mensagem a partir de outro número e confira a conversa e o estado do evento no app. Para anúncios CTWA, valide o recebimento real de `externalAdReply.sourceId` e `ctwaClid`; não é possível fabricar a origem de mensagens sem evidência.
 
-Para testes locais, rode `python webhook_proxy.py` e aponte um túnel HTTPS para `http://127.0.0.1:8766`. O proxy encaminha POSTs dos webhooks Omni ao app em 8765 e permite um retorno OAuth fixo para a sessão local, sem disponibilizar login/admin pela internet. A URL temporária muda se o túnel for recriado: atualize `PUBLIC_BASE_URL`, reinicie web/worker e atualize o webhook no app. O computador, app, worker, proxy e túnel precisam permanecer ligados.
+Para testes locais, rode `python webhook_proxy.py` e aponte um túnel HTTPS para `http://127.0.0.1:8766`. O proxy encaminha POSTs dos webhooks Omni ao app em 8765, permite o retorno OAuth fixo para a sessão local e abre links públicos `/r/<uuid>/` no WhatsApp. Login/admin continuam privados. Os links públicos preservam UTMs, registram um clique e só redirecionam para `https://wa.me/`. A URL temporária muda se o túnel for recriado: atualize `PUBLIC_BASE_URL`, reinicie web/worker e atualize o webhook no app. O computador, app, worker, proxy e túnel precisam permanecer ligados.
 
 O segredo HMAC retornado pelo Omni é salvo criptografado. A assinatura usa timestamp, tópico, partição, offset e corpo descomprimido, conforme a documentação. Assinaturas com mais de cinco minutos são recusadas. A URL isoladamente não autoriza callbacks Omni: também são exigidos Bearer e assinatura.
 
@@ -156,6 +163,14 @@ O workflow em `.github/workflows/check.yml` executa os testes com PostgreSQL no 
 
 ## Próximas etapas do documento original
 
-Este é o MVP transacional com integração de anúncios Meta. Ainda não inclui kanban, IA de vendas, onboarding Google, ROAS por anúncio, API pública/MCP, leitura de QR codes dentro do Rastro, pixel de navegador, webhooks de saída, relatórios assíncronos nem upload de conversões Google. A conexão por QR é feita no painel Omni. Áudio/mídia não são baixados ou transcritos. Histórico de mensagens anterior à conexão não é importado automaticamente. Alterações/exclusões e variantes de payload não documentadas precisam de validação adicional com a instância real. O registro do webhook e a autorização dos anúncios só podem ser confirmados com chaves válidas e uma mensagem real.
+Este é o MVP transacional com integração de anúncios Meta. Ainda não inclui kanban, IA de vendas, onboarding Google, ROAS por anúncio, API pública/MCP, pixel de navegador, webhooks de saída, relatórios assíncronos nem upload de conversões Google. A conexão por QR pode ser feita dentro do Rastro; o fluxo legado no painel Omni continua disponível para a administração. Áudio/mídia não são baixados ou transcritos. Histórico de mensagens anterior à conexão não é importado automaticamente. Alterações/exclusões e variantes de payload não documentadas precisam de validação adicional com a instância real. O registro do webhook e a autorização dos anúncios só podem ser confirmados com chaves válidas e uma mensagem real.
 
 Referências consultadas: [Django 5.2 LTS](https://www.djangoproject.com/download/), [deploy Django](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/), [webhooks Z-API](https://developer.z-api.io/webhooks/on-message-received-and-delivery), [payloads Z-API](https://developer.z-api.io/webhooks/on-message-received-examples), [serviços App EasyPanel](https://easypanel.io/docs/services/app), [CAPI Business Messaging](https://developers.facebook.com/docs/marketing-api/conversions-api/business-messaging/).
+
+## Experiência dos projetos e rastreamento
+
+A página inicial separa clientes reais de demonstrações e mostra contatos, origens rastreadas, links e configuração do WhatsApp/Meta. Identificadores técnicos de novos clientes são gerados internamente. O painel de cada projeto mostra as etapas WhatsApp → Link → Meta Ads opcional.
+
+Links funcionam sem anúncios: compartilhe a URL pública, abra por outro número e envie a mensagem com o código. A evidência só é registrada quando a mensagem chega; apagar o código impede essa associação. A área Rastreamento permite copiar o link, visualizar a mensagem e testar o destino. `PUBLIC_BASE_URL` é usado para links compartilháveis; não divulgue endereços localhost. Durante testes, mantenha computador, proxy e túnel ativos.
+
+Anúncios CTWA podem abrir o WhatsApp diretamente; sua identificação depende da referência entregue na mensagem. Autorização Meta importa contas/métricas, mas não fabrica uma origem nem gera campanhas. Uma conta sem dados no período retorna relatório vazio.
