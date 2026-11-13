@@ -1,12 +1,35 @@
-"""Local tunnel target. Only signed Omni hooks reach Django; the UI stays local."""
+"""Local tunnel: signed hooks and a fixed OAuth return to the local browser session."""
 import http.client
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_error(404)
+        parts = urlsplit(self.path)
+        if parts.path != '/integrations/meta/callback/':
+            self.send_error(404)
+            return
+        try:
+            if len(parts.query) > 16000:
+                raise ValueError
+            query = parse_qs(parts.query, max_num_fields=10)
+            allowed = ('code', 'state', 'error')
+            if not query.get('state') or any(len(values) != 1 for values in query.values()):
+                raise ValueError
+            params = {key: query[key][0] for key in allowed if key in query}
+        except ValueError:
+            self.send_error(400)
+            return
+        # The local app verifies one-use state and session before exchanging the code.
+        # A fixed destination restores the localhost cookie without exposing the UI.
+        self.send_response(302)
+        self.send_header('Location', 'http://127.0.0.1:8765/integrations/meta/callback/?' + urlencode(params))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
 
     def do_POST(self):
         if not re.fullmatch(r'/hooks/omni/[0-9a-f-]{36}/[A-Za-z0-9_-]{20,100}/', self.path):

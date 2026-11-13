@@ -112,7 +112,7 @@ class IntegrationTests(TenantFixture):
         self.assertEqual(self.client.get(reverse('meta_settings', args=[self.other.id])).status_code, 200)
         self.assertEqual(self.client.post(reverse('meta_settings', args=[self.account.id]), {'action': 'sync'}).status_code, 403)
 
-    @override_settings(META_REDIRECT_URI='')
+    @override_settings(META_REDIRECT_URI='https://tunnel.example/integrations/meta/callback/')
     @patch('crm.meta_views.graph')
     def test_oauth_bound_to_session_account_and_single_use(self, graph):
         self.login()
@@ -130,6 +130,7 @@ class IntegrationTests(TenantFixture):
         self.assertIsNotNone(self.integration.token_expires_at)
         self.assertEqual(self.client.get(callback, {'state': pending['state'], 'code': 'valid'}).status_code, 400)
         self.assertEqual(graph.call_count, 1)
+        self.assertEqual(graph.call_args.args[2]['redirect_uri'], 'https://tunnel.example/integrations/meta/callback/')
 
     @patch('crm.meta_views.graph')
     def test_oauth_rejects_bad_state_and_expired_state_without_network(self, graph):
