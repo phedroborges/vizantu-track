@@ -22,6 +22,8 @@
       {% if account %}
       <a href="{% url 'dashboard' account.id %}" {% if request.resolver_match.url_name == 'dashboard' %}class="current" aria-current="page"{% endif %}>◫ &nbsp; Visão geral</a>
       <a href="{% url 'leads' account.id %}" {% if request.resolver_match.url_name == 'leads' or request.resolver_match.url_name == 'lead_detail' %}class="current" aria-current="page"{% endif %}>☰ &nbsp; Conversas</a>
+      <a href="{% url 'funnel' account.id %}">▥ &nbsp; Funil comercial</a>
+      {% if is_manager %}<a href="{% url 'automation_settings' account.id %}">⚡ &nbsp; Automações e eventos</a>{% endif %}
       <a href="{% url 'links' account.id %}" {% if request.resolver_match.url_name == 'links' %}class="current" aria-current="page"{% endif %}>↗ &nbsp; Links rastreáveis</a>
       <a href="{% url 'ads_report' account.id %}" {% if request.resolver_match.url_name == 'ads_report' %}class="current" aria-current="page"{% endif %}>▤ &nbsp; Anúncios</a>
       {% if is_manager %}<a href="{% url 'connections' account.id %}" {% if request.resolver_match.url_name == 'connections' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; WhatsApp</a>

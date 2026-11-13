@@ -3,6 +3,7 @@ set -eu
 python manage.py check --deploy --fail-level WARNING
 python manage.py prepare_database
 python manage.py migrate --noinput
+python manage.py setup_automation
 python manage.py prepare_database --secure
 python manage.py bootstrap_admin
 # Keep the web process and durable inbox worker together in the existing App service.

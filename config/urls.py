@@ -4,6 +4,7 @@ from django.urls import path
 from crm import views
 from crm import meta_views
 from crm import whatsapp_views
+from crm import funnel_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,4 +33,6 @@ urlpatterns = [
     path('a/<uuid:account_id>/meta/connect/', meta_views.meta_connect, name='meta_connect'),
     path('integrations/meta/callback/', meta_views.meta_callback, name='meta_callback'),
     path('a/<uuid:account_id>/ads/', meta_views.ads_report, name='ads_report'),
+    path('a/<uuid:account_id>/funnel/', funnel_views.board, name='funnel'),
+    path('a/<uuid:account_id>/automation/', funnel_views.automation_settings, name='automation_settings'),
 ]

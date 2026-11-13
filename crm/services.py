@@ -23,8 +23,11 @@ def create_account(name, key, user):
     account.save()
     Membership.objects.create(account=account, user=user, role='manager')
     for position, (name, won) in enumerate([('Novo contato', False), ('Qualificado', False),
-                                           ('Proposta', False), ('Venda', True), ('Perdido', False)]):
-        Stage.objects.create(account=account, name=name, position=position, won=won)
+                                           ('Proposta', False), ('Venda', True)]):
+        Stage.objects.create(account=account, name=name, position=position, won=won,
+            event_name=['Contact', 'Lead', 'InitiateCheckout', 'Purchase'][position])
+    from .models import AutomationConfig
+    AutomationConfig.objects.create(account=account, prepared=True)
     Audit.objects.create(account=account, actor=user, action='client.created', object_id=str(account.id))
     return account
 
@@ -89,7 +92,7 @@ def ingest_message(connection, payload):
     data = parse_zapi(payload)
     if data is None:
         return 'ignored: evento não comercial'
-    stage = connection.account.stages.first()
+    stage = connection.account.stages.filter(archived=False).first()
     if stage is None:
         raise ValueError('Cliente sem etapas comerciais.')
     lead, _ = Lead.objects.get_or_create(connection=connection, phone=data['phone'], defaults={
@@ -111,6 +114,9 @@ def ingest_message(connection, payload):
     lead.save(update_fields=['first_message_at', 'last_message_at', 'name'])
     if msg.direction == 'in' and not payload.get('isEdit'):
         record_attribution(lead, msg, payload)
+    if not payload.get('isEdit'):
+        from .automation import apply_message_rules
+        apply_message_rules(lead, msg, initial=msg.direction == 'in' and not lead.messages.exclude(pk=msg.pk).filter(direction='in').exists())
     return 'done: mensagem registrada'
 
 
@@ -140,7 +146,7 @@ def record_attribution(lead, msg, payload):
 
 
 def locked_queryset(queryset):
-    return queryset.select_for_update(skip_locked=True) if db_connection.vendor == 'postgresql' else queryset.select_for_update()
+    return queryset.select_for_update(skip_locked=True, of=('self',)) if db_connection.vendor == 'postgresql' else queryset.select_for_update()
 
 
 def process_inbox_once():
@@ -161,17 +167,38 @@ def process_inbox_once():
 
 
 @transaction.atomic
-def change_stage(lead, stage, actor):
+def change_stage(lead, stage, actor, message=None, rule=None):
     lead = Lead.objects.select_for_update().get(pk=lead.pk)
     if stage.account_id != lead.connection.account_id:
         raise ValidationError('Etapa pertence a outro cliente.')
+    if stage.archived:
+        raise ValidationError('Etapa arquivada.')
     if lead.stage_id == stage.pk:
         return
-    previous = lead.stage.name
+    previous_stage = lead.stage
+    previous = previous_stage.name
     lead.stage = stage
     lead.save(update_fields=['stage'])
+    if rule and stage.won and lead.deal_value is None and rule.fixed_value:
+        lead.deal_value = rule.fixed_value
+        lead.save(update_fields=['deal_value'])
     Audit.objects.create(account=lead.connection.account, actor=actor, action='stage.changed',
         object_id=str(lead.id), detail={'from': previous, 'to': stage.name})
+    from .models import FunnelTransition
+    from .automation import emit_event
+    transition = FunnelTransition.objects.create(lead=lead, from_stage=previous_stage, to_stage=stage,
+        actor=actor, message=message, rule=rule, origin='message' if message else 'manual',
+        snapshot={'from': previous, 'to': stage.name, 'event': stage.event_name,
+                  'phrase': rule.phrase if rule else '', 'direction': rule.direction if rule else '',
+                  'rule_name': rule.name if rule else '', 'match_type': rule.match_type if rule else '',
+                  'priority': rule.priority if rule else None,
+                  'rule_version': rule.activated_at.isoformat() if rule else ''},
+        occurred_at=message.occurred_at if message else timezone.now())
+    emit_event(lead, transition)
+    if message and stage.won and lead.deal_value and not lead.conversion_events.filter(event_name='Purchase', sale__isnull=False).exists():
+        import uuid
+        record_sale(lead, lead.deal_value, uuid.uuid5(transition.id, 'sale'), None)
+    return transition
 
 
 @transaction.atomic
@@ -188,6 +215,13 @@ def record_sale(lead, amount, request_id, actor):
     won = lead.connection.account.stages.filter(won=True).first()
     if won:
         change_stage(lead, won, actor)
+        from .automation import emit_event
+        from .models import FunnelTransition
+        transition = lead.transitions.filter(to_stage=won).order_by('-occurred_at').first()
+        if transition is None:
+            transition = FunnelTransition.objects.create(lead=lead, to_stage=won, actor=actor, origin='manual')
+        if won.event_name == 'Purchase':
+            emit_event(lead, transition, sale=sale)
     Audit.objects.create(account=lead.connection.account, actor=actor, action='sale.created',
                          object_id=str(sale.id), detail={'amount': str(amount), 'currency': sale.currency})
     return sale
@@ -202,8 +236,9 @@ def meta_config(account):
     if integration:
         credentials = unseal(integration.credentials)
         for key in config:
-            if credentials.get(key):
-                config[key] = credentials[key]
+            stored_key = 'conversion_token' if key == 'access_token' else key
+            if credentials.get(stored_key):
+                config[key] = credentials[stored_key]
     return config
 
 
@@ -212,6 +247,12 @@ def queue_conversion(sale, actor):
     sale = Sale.objects.select_for_update().select_related('lead__connection__account').get(pk=sale.pk)
     if Dispatch.objects.filter(sale=sale).exists():
         raise ValidationError('Esta venda já tem um despacho. Confira o histórico antes de qualquer ação.')
+    if hasattr(sale, 'automation_event'):
+        event = sale.automation_event
+        if event.status != 'simulated':
+            raise ValidationError('Esta venda já tem evento no funil. Confira a fila de eventos para evitar duplicidade.')
+        event.status, event.reason = 'cancelled', 'Substituído pelo envio manual autorizado desta venda.'
+        event.save(update_fields=['status', 'reason'])
     account = sale.lead.connection.account
     config = meta_config(account)
     if not all(config[k] for k in ('dataset_id', 'access_token', 'waba_id')) or not re.fullmatch(r'v\d+\.\d+', settings.META_GRAPH_VERSION):

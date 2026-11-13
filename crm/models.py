@@ -56,6 +56,8 @@ class Stage(models.Model):
     name = models.CharField('Etapa', max_length=60)
     position = models.PositiveSmallIntegerField(default=0)
     won = models.BooleanField(default=False)
+    event_name = models.CharField(max_length=60, blank=True)
+    archived = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['position', 'id']
@@ -71,6 +73,7 @@ class Lead(models.Model):
     phone = models.CharField(max_length=15, validators=[phone_validator])
     name = models.CharField(max_length=150, blank=True)
     stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name='leads')
+    deal_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.01'))])
     first_message_at = models.DateTimeField()
     last_message_at = models.DateTimeField(db_index=True)
 
@@ -136,6 +139,11 @@ class Attribution(models.Model):
     gclid = models.CharField(max_length=500, blank=True)
     fbclid = models.CharField(max_length=500, blank=True)
     ad_id = models.CharField(max_length=200, blank=True)
+    ad_name = models.CharField(max_length=500, blank=True)
+    adset_name = models.CharField(max_length=500, blank=True)
+    ad_campaign_name = models.CharField(max_length=500, blank=True)
+    ad_account_id = models.CharField(max_length=80, blank=True)
+    enrichment_status = models.CharField(max_length=12, default='pending')
     ctwa_clid = models.CharField(max_length=1000, blank=True)
     evidence = models.CharField(max_length=20, choices=[('message_code', 'Código recebido na mensagem'),
                                                     ('ad_referral', 'Anúncio informado pela Z-API')])
@@ -152,7 +160,7 @@ class Sale(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     currency = models.CharField(max_length=3, default='BRL')
     occurred_at = models.DateTimeField(default=timezone.now)
-    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
 
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(amount__gt=0), name='sale_positive')]
@@ -232,3 +240,67 @@ class AdInsight(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['integration', 'ad_account_id', 'date', 'ad_id'], name='insight_daily_ad')]
+
+
+class AutomationConfig(models.Model):
+    account = models.OneToOneField(Account, on_delete=models.CASCADE, related_name='automation')
+    mode = models.CharField(max_length=12, default='simulation', choices=[('simulation', 'Simulação'), ('test', 'Teste Meta'), ('live', 'Produção')])
+    allowed_events = models.JSONField(default=list)
+    activated_at = models.DateTimeField(default=timezone.now)
+    prepared = models.BooleanField(default=False)
+
+
+class MessageRule(models.Model):
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='message_rules')
+    name = models.CharField(max_length=120)
+    phrase = models.CharField(max_length=500)
+    match_type = models.CharField(max_length=12, default='contains', choices=[('contains', 'Contém a frase'), ('exact', 'Mensagem inteira')])
+    direction = models.CharField(max_length=3, default='out', choices=[('out', 'Enviada pelo atendente'), ('in', 'Recebida do contato')])
+    from_stage = models.ForeignKey(Stage, null=True, blank=True, on_delete=models.PROTECT, related_name='+')
+    to_stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name='+')
+    priority = models.PositiveSmallIntegerField(default=10)
+    fixed_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.01'))])
+    active = models.BooleanField(default=True)
+    activated_at = models.DateTimeField(default=timezone.now)
+
+    def clean(self):
+        if self.to_stage_id and self.to_stage.account_id != self.account_id:
+            raise ValidationError('Etapa de destino pertence a outro cliente.')
+        if self.from_stage_id and self.from_stage.account_id != self.account_id:
+            raise ValidationError('Etapa de origem pertence a outro cliente.')
+        if self.to_stage_id and self.to_stage.archived:
+            raise ValidationError('Etapa de destino arquivada.')
+
+
+class FunnelTransition(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lead = models.ForeignKey(Lead, on_delete=models.PROTECT, related_name='transitions')
+    from_stage = models.ForeignKey(Stage, null=True, on_delete=models.PROTECT, related_name='+')
+    to_stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name='+')
+    message = models.ForeignKey(Message, null=True, on_delete=models.PROTECT)
+    rule = models.ForeignKey(MessageRule, null=True, on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT)
+    origin = models.CharField(max_length=12)
+    snapshot = models.JSONField(default=dict)
+    occurred_at = models.DateTimeField(default=timezone.now)
+
+
+class ConversionEvent(models.Model):
+    STATUS = [('simulated', 'Simulado'), ('blocked', 'Bloqueado'), ('waiting_ad', 'Validando anúncio'),
+              ('pending', 'Na fila'), ('sending', 'Enviando'), ('sent', 'Aceito pela Meta'),
+              ('failed', 'Falhou'), ('review', 'Conferir na Meta'), ('cancelled', 'Substituído por envio manual')]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lead = models.ForeignKey(Lead, on_delete=models.PROTECT, related_name='conversion_events')
+    transition = models.ForeignKey(FunnelTransition, null=True, on_delete=models.PROTECT)
+    sale = models.OneToOneField(Sale, null=True, on_delete=models.PROTECT, related_name='automation_event')
+    dedup_key = models.CharField(max_length=200, unique=True)
+    event_name = models.CharField(max_length=60)
+    mode = models.CharField(max_length=12, default='simulation')
+    occurred_at = models.DateTimeField()
+    status = models.CharField(max_length=16, default='simulated', choices=STATUS)
+    reason = models.CharField(max_length=400, blank=True)
+    payload = models.JSONField(default=dict)
+    delivery_config = models.TextField(blank=True, editable=False)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)

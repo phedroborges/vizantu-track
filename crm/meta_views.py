@@ -53,7 +53,7 @@ def meta_settings(request, account_id):
                             credentials.pop('app_secret', None)
                             integration.token_expires_at = None
                         for key, value in form.cleaned_data.items():
-                            if key in ('app_secret', 'access_token') and not value:
+                            if key in ('app_secret', 'access_token', 'conversion_token') and not value:
                                 continue
                             credentials[key] = value
                         if form.cleaned_data['access_token']:
@@ -65,7 +65,7 @@ def meta_settings(request, account_id):
                     return redirect('meta_settings', account_id=account.id)
                 # Never echo bound password values in rendered HTML.
                 form.data = form.data.copy()
-                form.data['app_secret'] = form.data['access_token'] = ''
+                form.data['app_secret'] = form.data['access_token'] = form.data['conversion_token'] = ''
             elif action == 'list':
                 accounts = ad_accounts(integration)
             elif action == 'select':
@@ -96,6 +96,9 @@ def meta_settings(request, account_id):
                     if integration.sync_status == 'running':
                         raise ValidationError('Aguarde a sincronização terminar.')
                     credentials.pop('access_token', None)
+                    credentials.pop('conversion_token', None)
+                    from .models import AutomationConfig
+                    AutomationConfig.objects.filter(account=account).update(mode='simulation')
                     integration.credentials = seal(credentials)
                     integration.token_expires_at = None
                     integration.sync_status = 'idle'

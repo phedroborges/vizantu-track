@@ -15,7 +15,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import connection as db_connection, transaction
-from django.db.models import Count, Q, Sum, OuterRef, Subquery
+from django.db.models import Count, Q, Sum, OuterRef, Subquery, Exists
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,7 +24,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .forms import AccountForm, ConnectionForm, LinkForm, SaleForm, StageForm, OmniForm
+from .forms import AccountForm, ConnectionForm, LinkForm, SaleForm, StageForm, OmniForm, DealValueForm
 from .integrations import omni_call, register_omni, seal, unseal, verify_omni
 from .models import (Account, Attribution, Audit, Click, Connection, Dispatch, Lead,
                      Membership, Sale, Stage, TrackableLink, WebhookEvent, MetaIntegration)
@@ -53,6 +53,7 @@ def page(request, template, account, role, **context):
 def lead_query(account):
     first = Attribution.objects.filter(lead_id=OuterRef('pk')).order_by('occurred_at', 'id')
     return Lead.objects.filter(connection__account=account).select_related('connection', 'stage').annotate(
+        meta_origin=Exists(Attribution.objects.filter(lead_id=OuterRef('pk')).exclude(ad_id='')),
         origin=Subquery(first.values('source')[:1]), campaign_name=Subquery(first.values('campaign')[:1]))
 
 
@@ -168,9 +169,19 @@ def lead_detail(request, account_id, lead_id):
                 sale_form = SaleForm(request.POST)
                 if sale_form.is_valid():
                     record_sale(lead, sale_form.cleaned_data['amount'], sale_form.cleaned_data['request_id'], request.user)
-                    messages.success(request, 'Venda registrada. O envio para anúncios exige uma ação separada.')
+                    messages.success(request, 'Venda registrada. Confira o evento do funil e seu estado de envio.')
                 else:
                     return detail_page(request, account, role, lead, sale_form)
+            elif action == 'deal_value':
+                form = DealValueForm(request.POST, instance=lead)
+                if form.is_valid():
+                    form.save()
+                    pending_sale = lead.conversion_events.filter(event_name='Purchase', sale__isnull=True).first()
+                    if lead.stage.won and lead.deal_value and pending_sale:
+                        record_sale(lead, lead.deal_value, uuid.uuid5(pending_sale.id, 'sale'), request.user)
+                    messages.success(request, 'Valor negociado atualizado.')
+                else:
+                    messages.error(request, 'Informe um valor positivo com até duas casas decimais.')
             elif action == 'conversion':
                 if role != 'manager':
                     raise PermissionDenied
@@ -188,7 +199,9 @@ def lead_detail(request, account_id, lead_id):
 
 
 def detail_page(request, account, role, lead, sale_form):
-    return page(request, 'crm/lead_detail.html', account, role, lead=lead, stages=account.stages.all(),
+    return page(request, 'crm/lead_detail.html', account, role, lead=lead, stages=account.stages.filter(archived=False),
+        deal_form=DealValueForm(instance=lead), conversion_events=lead.conversion_events.order_by('-occurred_at'),
+        transitions=lead.transitions.select_related('from_stage', 'to_stage', 'rule', 'actor').order_by('-occurred_at')[:30],
         sale_form=sale_form, items=Paginator(lead.messages.order_by('-occurred_at', '-id'), 50).get_page(request.GET.get('page')),
         attributions=lead.attributions.all(), sales=lead.sales.select_related('operator', 'dispatch').order_by('-occurred_at'),
         history=account.audit.filter(object_id=str(lead.id)).order_by('-created_at')[:30])

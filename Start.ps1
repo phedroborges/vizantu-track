@@ -30,6 +30,8 @@ if (Test-Path -LiteralPath $localEnv) {
 }
 & $pythonExe manage.py migrate --noinput
 if ($LASTEXITCODE -ne 0) { throw 'Falha nas migrations.' }
+& $pythonExe manage.py setup_automation
+if ($LASTEXITCODE -ne 0) { throw 'Falha na preparação do funil.' }
 if ($Worker) {
     & $pythonExe manage.py runworker
 } else {
