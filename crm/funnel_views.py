@@ -41,7 +41,7 @@ def automation_settings(request, account_id):
     config, _ = AutomationConfig.objects.get_or_create(account=account)
     config_form = AutomationConfigForm(instance=config)
     rule_form = MessageRuleForm(account=account)
-    stage_form = StageForm()
+    stage_form = StageForm(auto_id='new-stage-%s')
     preview = None
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -56,7 +56,8 @@ def automation_settings(request, account_id):
                 return redirect('automation_settings', account_id=account.id)
         elif action == 'rule':
             rule = get_object_or_404(account.message_rules, pk=request.POST['rule_id']) if request.POST.get('rule_id') else None
-            rule_form = MessageRuleForm(request.POST, instance=rule, account=account)
+            rule_form = MessageRuleForm(request.POST, instance=rule, account=account,
+                auto_id=f'rule-{rule.pk}-%s' if rule else 'id_%s')
             if rule_form.is_valid():
                 obj = rule_form.save(commit=False)
                 obj.activated_at = timezone.now()
@@ -71,7 +72,7 @@ def automation_settings(request, account_id):
             return redirect('automation_settings', account_id=account.id)
         elif action == 'stage':
             stage = get_object_or_404(account.stages, pk=request.POST['stage_id']) if request.POST.get('stage_id') else None
-            stage_form = StageForm(request.POST, instance=stage)
+            stage_form = StageForm(request.POST, instance=stage, auto_id=f'stage-{stage.pk}-%s' if stage else 'new-stage-%s')
             if stage_form.is_valid():
                 obj = stage_form.save(commit=False)
                 obj.account = account
@@ -100,7 +101,9 @@ def automation_settings(request, account_id):
     for rule in rules:
         rule.edit_form = rule_form if rule_form.instance.pk == rule.pk else MessageRuleForm(instance=rule, account=account, auto_id=f'rule-{rule.pk}-%s')
     return page(request, 'crm/automation.html', account, role, config=config, config_form=config_form,
-        rule_form=rule_form, stage_form=stage_form, stage_forms=[(s, StageForm(instance=s, auto_id=f'stage-{s.pk}-%s')) for s in account.stages.all()],
+        rule_form=MessageRuleForm(account=account) if rule_form.instance.pk else rule_form,
+        stage_form=StageForm(auto_id='new-stage-%s') if stage_form.instance.pk else stage_form,
+        stage_forms=[(s, stage_form if stage_form.instance.pk == s.pk else StageForm(instance=s, auto_id=f'stage-{s.pk}-%s')) for s in account.stages.all()],
         rules=rules,
         events=Paginator(ConversionEvent.objects.filter(lead__connection__account=account).select_related('lead', 'transition__message', 'transition__rule').order_by('-occurred_at'), 30).get_page(request.GET.get('page')),
         preview=preview)
