@@ -9,4 +9,4 @@ RUN DEBUG=1 SECRET_KEY=build-only-key-never-used-at-runtime-000000000 python man
     && chown -R app:app /app
 USER app
 EXPOSE 8000
-CMD ["sh", "boot.sh"]
+CMD ["bash", "boot.sh"]

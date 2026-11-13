@@ -39,27 +39,32 @@ Use somente um worker com SQLite. Produção exige PostgreSQL. A demonstração 
 
 ## Implantação no EasyPanel
 
-Use o projeto **vizantu**. A fonte é o repositório privado no GitHub, branch `main`, build path `/`, builder **Dockerfile**, caminho `Dockerfile`.
+Use os serviços já criados no projeto **vizantu**. A fonte do app é o repositório privado no GitHub, branch `main`, build path `/`, builder **Dockerfile**, caminho `Dockerfile`.
 
 Serviços:
 
 | Serviço | Tipo | Configuração |
 | --- | --- | --- |
-| `track-db` | PostgreSQL 17 | Banco exclusivo, sem porta pública, volume persistente |
-| `track` | App | Dockerfile deste repositório; comando padrão; porta interna 8000 |
-| `track-worker` | App | Mesmo repositório, comando `python manage.py runworker`; sem domínio público |
+| `supabase-rastro` | Compose Supabase | Instância exclusiva com PostgreSQL e Studio |
+| `rastro` | App | Site e worker no mesmo serviço; Dockerfile; porta interna 8000 |
 
-1. Crie `track-db` e guarde as credenciais no ambiente dos serviços, usando a URL interna que o EasyPanel fornece.
-2. Copie as variáveis de `.env.example` para `track` e `track-worker`, preenchendo `DATABASE_URL` e uma `SECRET_KEY` aleatória. Use a **mesma** chave e o mesmo banco nos dois.
+1. Use o PostgreSQL do `supabase-rastro`, separado do `supabase-vizantu`, pelo host interno do container `db`.
+2. Copie as variáveis de `.env.example` para `rastro`, preenchendo `DATABASE_URL`, `DATABASE_SCHEMA=rastro` e uma `SECRET_KEY` aleatória.
 3. Gere a chave com `python -c "import secrets; print(secrets.token_urlsafe(50))"`. Não use a chave de exemplo.
 4. Conecte o repositório privado usando a integração GitHub já autorizada do painel. Se preferir Git/SSH, use uma deploy key restrita a leitura deste repositório.
-5. Implante primeiro `track`. O comando `boot.sh` executa as checagens e migrations antes de iniciar Gunicorn.
+5. Implante `rastro`. O comando `boot.sh` executa as checagens e migrations antes de iniciar Gunicorn e o worker. Se qualquer processo terminar, o container encerra e o EasyPanel pode reiniciá-lo.
 6. Configure o domínio `track.metricz.com.br`, HTTPS, destino HTTP na porta 8000. O proxy deve fornecer `X-Forwarded-Proto: https`. Não publique a porta 8000 diretamente na VPS.
 7. Crie o primeiro administrador com `python manage.py createsuperuser` no shell do container. Como alternativa de primeiro deploy, defina `DJANGO_SUPERUSER_USERNAME` e `DJANGO_SUPERUSER_PASSWORD` no ambiente do serviço web; o boot cria somente usuários ainda inexistentes. Remova essas duas variáveis após o primeiro login. Não existe senha padrão em produção.
-8. Implante o worker com o comando acima. Se o painel executar o comando substituto via shell, use `exec python manage.py runworker`.
+8. Mantenha o comando padrão do Dockerfile. O worker inicia dentro do mesmo container; não crie outro serviço para ele.
 9. Consulte `/health/`, abra o painel e faça o piloto com um cliente antes de cadastrar os demais.
 
 O app não necessita de volume próprio: os dados persistem no PostgreSQL. Configure backup diário do banco e teste a restauração em um banco separado. Não configure cache de CDN para páginas autenticadas ou `/r/`. Não ative HTTP Basic Auth na frente dos webhooks Z-API.
+
+### Studio do Supabase
+
+Escolha o schema **rastro** no Table Editor para ver as tabelas do aplicativo. O boot cria esse schema antes das migrations, revoga seu acesso de `PUBLIC` e habilita RLS nas tabelas após as migrations. O Django usa a conexão SQL no servidor; as tabelas do app não devem ser adicionadas à lista `PGRST_DB_SCHEMAS` da Data API. O Studio permite administração com a credencial privada da instância; essas credenciais nunca são enviadas ao navegador do Track.
+
+O Supabase Auth e os usuários do Django são sistemas diferentes. Os acessos à aplicação são geridos no Track/Django; a senha do Studio é reservada ao administrador. Não altere senhas de usuários Django diretamente no editor de tabelas.
 
 O Gunicorn não habilita access log. Em outros logs/proxies, evite registrar o caminho completo de `/hooks/zapi/`, pois ele contém o segredo do webhook. Não publique `.env`, banco, payloads reais, senhas ou tokens no repositório.
 

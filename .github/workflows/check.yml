@@ -34,4 +34,12 @@ jobs:
       - run: python manage.py test crm --verbosity 1
         env:
           DEBUG: '1'
+      - name: Validate private schema for Supabase
+        env:
+          DATABASE_SCHEMA: track
+        run: |
+          python manage.py prepare_database
+          python manage.py migrate --noinput
+          python manage.py prepare_database --secure
+          python manage.py shell -c "from django.db import connection; c=connection.cursor(); c.execute(\"SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'crm_%'\"); assert c.fetchone()[0] == 0; c.execute(\"SELECT count(*) FROM pg_tables WHERE schemaname='track' AND tablename LIKE 'crm_%' AND rowsecurity\"); assert c.fetchone()[0] > 10"
       - run: docker build -t track:check .

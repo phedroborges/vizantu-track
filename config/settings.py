@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from urllib.parse import unquote, urlparse, parse_qs
 from django.core.exceptions import ImproperlyConfigured
@@ -22,6 +23,11 @@ TEMPLATES = [{'BACKEND': 'django.template.backends.django.DjangoTemplates', 'DIR
               'django.contrib.auth.context_processors.auth', 'django.contrib.messages.context_processors.messages']}}]
 WSGI_APPLICATION = 'config.wsgi.application'
 db_url = os.getenv('DATABASE_URL')
+DATABASE_SCHEMA = os.getenv('DATABASE_SCHEMA', '')
+if DATABASE_SCHEMA and (not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', DATABASE_SCHEMA)
+        or DATABASE_SCHEMA in {'public', 'auth', 'storage', 'extensions', 'realtime', 'vault', 'graphql', 'graphql_public', 'supabase_functions'}
+        or DATABASE_SCHEMA.startswith(('pg_', 'supabase_'))):
+    raise ImproperlyConfigured('DATABASE_SCHEMA deve ser um schema privado do aplicativo, como track.')
 if db_url:
     db = urlparse(db_url)
     if db.scheme not in ('postgres', 'postgresql'):
@@ -30,6 +36,8 @@ if db_url:
                  'USER': unquote(db.username or ''), 'PASSWORD': unquote(db.password or ''),
                  'HOST': db.hostname, 'PORT': db.port or 5432, 'CONN_MAX_AGE': 60,
                  'OPTIONS': {k: v[-1] for k, v in parse_qs(db.query).items() if k == 'sslmode'}}}
+    if DATABASE_SCHEMA:
+        DATABASES['default']['OPTIONS']['options'] = '-c search_path=' + DATABASE_SCHEMA
 elif DEBUG:
     DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3',
                  'NAME': os.getenv('SQLITE_PATH', str(BASE_DIR / 'local.sqlite3')), 'OPTIONS': {'timeout': 20}}}
