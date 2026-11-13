@@ -1,0 +1,4 @@
+{% extends 'crm/base.html' %}{% block content %}
+<div class="page-heading"><div><div class="eyebrow">Comece uma nova operação</div><h1>Adicionar cliente</h1><p class="muted">Cada cliente tem equipe, números e histórico separados.</p></div></div>
+<section class="panel form" style="max-width:650px"><form method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">Criar cliente →</button></form></section>
+{% endblock %}
