@@ -5,7 +5,7 @@
 <p>Estado: <strong>{% if has_token %}token cadastrado{% else %}aguardando autorização{% endif %}</strong>{% if integration.token_expires_at %} · expira em {{ integration.token_expires_at|date:'d/m/Y H:i' }}{% endif %}</p>
 <p class="muted">No painel do app da Meta, cadastre este endereço em URIs de redirecionamento OAuth válidos:</p><code class="code">{{ callback }}</code>
 <p class="muted spaced">A autorização solicita leitura de anúncios (ads_read). Sua conta precisa ter acesso aos ativos; clientes externos também dependem das permissões e do modo de publicação do app na Meta.</p>
-<form method="post" action="{% url 'meta_connect' account.id %}">{% csrf_token %}<button {% if not oauth_ready %}disabled{% endif %}>Autorizar pelo Facebook</button></form>
+<form method="post" action="{% url 'meta_connect' account.id %}">{% csrf_token %}<button type="submit">{% if has_token %}Autorizar novamente pelo Facebook{% else %}Conectar conta do Facebook{% endif %}</button></form>
 {% if not oauth_ready %}<p class="muted spaced">Cadastre App ID e App Secret ao lado para habilitar a autorização. Você também pode usar um token de anúncios existente.</p>{% endif %}
 </section>
 <section class="panel"><h2>2. Escolher a conta deste cliente</h2>
