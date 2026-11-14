@@ -3,8 +3,8 @@
 {% block body %}
 <main class="auth panel">
   <div class="brand"><i>↗</i>rastro.</div>
-  <div class="eyebrow">Inteligência de conversas</div><h1 style="margin:10px 0">Seu próximo resultado<br>começa na conversa.</h1>
-  <p class="muted">Entre para acompanhar origens, contatos e vendas dos seus clientes.</p><hr class="divider">
+  <div class="eyebrow">Marketing e vendas</div><h1 style="margin:10px 0">Do primeiro contato<br>ao resultado.</h1>
+  <p class="muted">Dashboards e CRM para acompanhar o marketing, o atendimento e as vendas dos seus clientes.</p><hr class="divider">
   <form method="post" class="form">{% csrf_token %}{{ form.as_p }}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}<button type="submit">Entrar na operação →</button></form>
   <p class="muted spaced" style="font-size:12px">Acesso restrito à equipe e aos clientes autorizados.</p>
 </main>

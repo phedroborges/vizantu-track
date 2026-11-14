@@ -1,6 +1,20 @@
 # Rastro · Track Metricz
 
-Aplicação própria de atribuição e acompanhamento comercial de conversas do WhatsApp, para uso em `track.metricz.com.br`. Implementação independente, baseada no comportamento descrito no documento de referência, sem código ou ativos do Tintim.
+Plataforma própria de dashboards de marketing, atribuição e CRM, para uso em `track.metricz.com.br`. Implementação independente, baseada no comportamento descrito no documento de referência, sem código ou ativos do Tintim.
+
+## Interface de marketing e vendas
+
+A página inicial é a visão da agência: clientes acessíveis, novos contatos e vendas dos últimos 30 dias. Receita é separada por moeda e demonstrações não entram nesses totais. A lista de projetos fica em `/clients/`.
+
+Cada cliente possui uma central de dashboards e navegação em três áreas:
+
+- **Dashboards:** resumo, tráfego pago, redes sociais, presença local, site/e-commerce e jornada/atribuição.
+- **CRM e receita:** contatos/conversas, funil, vendas/ERP, automações e links rastreáveis.
+- **Configuração:** integrações, equipe e funil.
+
+O relatório Meta Ads e os fluxos existentes de CRM continuam disponíveis. Vendas/ERP lista registros reais do CRM; não os classifica automaticamente como vendas presenciais. Google Ads, redes orgânicas, Google Meu Negócio, Analytics, e-commerce, ERP e atribuição consolidada têm páginas de preparação, sem conexão ou dados simulados. Campos com `—` significam indisponibilidade, não zero. A central de integrações identifica o estado de cada fonte, sem permitir configurar contas de outros clientes.
+
+A etapa atual entrega a estrutura de interface. Implementaremos os conectores e gráficos de resultados página a página, sem novas dependências, serviços ou alterações no banco nesta etapa.
 
 ## O que está implementado
 

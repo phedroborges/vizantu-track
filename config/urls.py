@@ -5,13 +5,20 @@ from crm import views
 from crm import meta_views
 from crm import whatsapp_views
 from crm import funnel_views
+from crm import portal_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('login/', auth.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth.LogoutView.as_view(), name='logout'),
     path('health/', views.health),
-    path('', views.home, name='home'),
+    path('', portal_views.agency, name='home'),
+    path('clients/', views.home, name='clients'),
+    path('dashboards/', portal_views.dashboards, name='agency_dashboards'),
+    path('a/<uuid:account_id>/dashboards/', portal_views.dashboards, name='client_dashboards'),
+    path('a/<uuid:account_id>/reports/<slug:section>/', portal_views.channel, name='channel_report'),
+    path('a/<uuid:account_id>/sales/', portal_views.sales, name='sales'),
+    path('a/<uuid:account_id>/integrations/', portal_views.integrations, name='integrations'),
     path('clients/new/', views.account_new, name='account_new'),
     path('a/<uuid:account_id>/', views.dashboard, name='dashboard'),
     path('a/<uuid:account_id>/leads/', views.leads, name='leads'),

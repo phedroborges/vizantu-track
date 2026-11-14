@@ -150,7 +150,7 @@ class WhatsAppOnboardingTests(TenantFixture):
         self.assertContains(response, 'Funciona sem anúncios')
 
     def test_projects_show_setup_progress(self):
-        response = self.client.get(reverse('home'))
+        response = self.client.get(reverse('clients'))
         self.assertContains(response, 'Clientes e projetos')
         self.assertContains(response, 'Em configuração')
         self.assertContains(response, 'Meta opcional')

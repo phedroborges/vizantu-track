@@ -108,7 +108,7 @@ def account_new(request):
     form = AccountForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         account = create_account(form.cleaned_data['name'], form.cleaned_data['integration_key'], request.user)
-        return redirect('connections', account_id=account.id)
+        return redirect('integrations', account_id=account.id)
     return render(request, 'crm/new_account.html', {'form': form, 'accounts': available_accounts(request.user)})
 
 
