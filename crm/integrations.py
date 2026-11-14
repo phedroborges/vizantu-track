@@ -53,6 +53,12 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+class ProviderError(ValidationError):
+    def __init__(self, message, status=None):
+        self.http_status = status
+        super().__init__(message)
+
+
 def api_call(url, token='', data=None, method='GET'):
     headers = {'Accept': 'application/json'}
     if token:
@@ -70,7 +76,16 @@ def api_call(url, token='', data=None, method='GET'):
             raise ValidationError('O provedor recusou a consulta. Confira credenciais e permissões.')
         return body
     except HTTPError as exc:
-        raise ValidationError(f'Provedor HTTP {exc.code}. Confira chave, permissões e disponibilidade; nenhuma mensagem foi enviada.') from None
+        message = f'Provedor HTTP {exc.code}. Confira chave e permissões da operação.'
+        try:
+            error = json.loads(exc.read(16384)).get('error')
+            if error == 'channel_name_in_use':
+                message = 'Já existe um canal com este nome no Omni. Vincule o canal existente para evitar duplicidade.'
+            elif isinstance(error, str) and 'requires ENTERPRISE role' in error:
+                message = 'O Omni exige perfil ENTERPRISE para esta operação. Confira a habilitação da API com o provedor; canais existentes podem ser vinculados pelo ID.'
+        except (ValueError, AttributeError):
+            pass
+        raise ProviderError(message, exc.code) from None
     except (URLError, TimeoutError, OSError, ValueError):
         raise ValidationError('Não foi possível consultar o provedor. Tente novamente em alguns minutos.') from None
 
