@@ -6,11 +6,11 @@ Plataforma própria de dashboards de marketing, atribuição e CRM, para uso em 
 
 A página inicial é o dashboard único da agência, organizado na tríade pago, orgânico e físico. Permite selecionar todos, um ou vários projetos, período de 7/30/90 dias ou personalizado (até 366 dias), destaque de caminho e visibilidade dos painéis salva no navegador. Gráficos mostram novos contatos/vendas por dia e comparação de contatos entre projetos; a tabela detalha investimento Meta, contatos e vendas. Os dados do CRM são separados das métricas dos canais; não há atribuição presumida. O antigo `/dashboards/` redireciona para essa visão, preservando filtros. Receita é separada por moeda e demonstrações não entram nesses totais. A lista de projetos fica em `/clients/`.
 
-Cada cliente possui uma central de dashboards e navegação em três áreas:
+Cada cliente possui uma única visão do projeto e navegação em três áreas. O antigo catálogo de dashboards redireciona para essa visão; as páginas de canais são acessadas diretamente pelo menu:
 
-- **Dashboards:** resumo, tráfego pago, redes sociais, presença local, site/e-commerce e jornada/atribuição.
+- **Resultados do projeto:** visão do projeto, pago, orgânico, físico/presença local, site/e-commerce e jornada/atribuição.
 - **CRM e receita:** contatos/conversas, funil, vendas/ERP, automações e links rastreáveis.
-- **Configuração:** integrações, equipe e funil.
+- **Configuração:** integrações, equipe e etapas (configuração das colunas, separada da operação do funil comercial).
 
 O relatório Meta Ads e os fluxos existentes de CRM continuam disponíveis. Vendas/ERP lista registros reais do CRM; não os classifica automaticamente como vendas presenciais. Google Ads, redes orgânicas, Google Meu Negócio, Analytics, e-commerce, ERP e atribuição consolidada têm páginas de preparação, sem conexão ou dados simulados. Campos com `—` significam indisponibilidade, não zero. A central de integrações identifica o estado de cada fonte, sem permitir configurar contas de outros clientes.
 

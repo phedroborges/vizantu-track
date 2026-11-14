@@ -210,4 +210,4 @@ def ads_report(request, account_id):
             row.update(names[row['ad_id']])
             row['leads'] = counts.get(row['ad_id'], 0)
             row['cost_per_lead'] = row['spend'] / Decimal(row['leads']) if row['leads'] else None
-    return page(request, 'crm/ads.html', account, role, integration=integration, rows=rows, totals=totals, start=start.isoformat(), end=end.isoformat(), filters=filters, options=options)
+    return page(request, 'crm/ads.html', account, role, integration=integration, rows=rows, totals=totals, start=start.isoformat(), end=end.isoformat(), filters=filters, options=options, section='paid')

@@ -29,23 +29,23 @@
       <a href="{% url 'clients' %}" {% if request.resolver_match.url_name == 'clients' %}class="current" aria-current="page"{% endif %}>▦ &nbsp; Clientes e projetos</a>
 
       {% if account %}
-      <div class="nav-label">Dashboards do cliente</div>
-      <a href="{% url 'dashboard' account.id %}" {% if request.resolver_match.url_name == 'dashboard' %}class="current" aria-current="page"{% endif %}>◫ &nbsp; Resumo de resultados</a>
-      <a href="{% url 'client_dashboards' account.id %}" {% if request.resolver_match.url_name == 'client_dashboards' %}class="current" aria-current="page"{% endif %}>▥ &nbsp; Todos os dashboards</a>
-      <a href="{% url 'channel_report' account.id 'paid' %}" {% if section == 'paid' or request.resolver_match.url_name == 'ads_report' %}class="current" aria-current="page"{% endif %}>↗ &nbsp; Tráfego pago</a>
-      <a href="{% url 'channel_report' account.id 'organic' %}" {% if section == 'organic' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; Redes sociais</a>
-      <a href="{% url 'channel_report' account.id 'local' %}" {% if section == 'local' %}class="current" aria-current="page"{% endif %}>⌖ &nbsp; Presença local</a>
+      <div class="nav-label">Resultados do projeto</div>
+      <a href="{% url 'dashboard' account.id %}" {% if request.resolver_match.url_name == 'dashboard' %}class="current" aria-current="page"{% endif %}>◫ &nbsp; Visão do projeto</a>
+
+      <a href="{% url 'channel_report' account.id 'paid' %}" {% if section == 'paid' or request.resolver_match.url_name == 'ads_report' %}class="current" aria-current="page"{% endif %}>↗ &nbsp; Pago · tráfego</a>
+      <a href="{% url 'channel_report' account.id 'organic' %}" {% if section == 'organic' %}class="current" aria-current="page"{% endif %}>◎ &nbsp; Orgânico · redes sociais</a>
+      <a href="{% url 'channel_report' account.id 'local' %}" {% if section == 'local' %}class="current" aria-current="page"{% endif %}>⌖ &nbsp; Físico · presença local</a>
       <a href="{% url 'channel_report' account.id 'site' %}" {% if section == 'site' %}class="current" aria-current="page"{% endif %}>▤ &nbsp; Site e e-commerce</a>
       <a href="{% url 'channel_report' account.id 'attribution' %}" {% if section == 'attribution' %}class="current" aria-current="page"{% endif %}>⇄ &nbsp; Jornada e atribuição</a>
       <div class="nav-label">CRM e receita</div>
       <a href="{% url 'leads' account.id %}" {% if request.resolver_match.url_name == 'leads' or request.resolver_match.url_name == 'lead_detail' %}class="current" aria-current="page"{% endif %}>☰ &nbsp; Contatos e conversas</a>
       <a href="{% url 'funnel' account.id %}" {% if request.resolver_match.url_name == 'funnel' %}class="current" aria-current="page"{% endif %}>▥ &nbsp; Funil comercial</a>
-      <a href="{% url 'sales' account.id %}" {% if request.resolver_match.url_name == 'sales' %}class="current" aria-current="page"{% endif %}>$ &nbsp; Vendas e ERP</a>
+      <a href="{% url 'sales' account.id %}" {% if request.resolver_match.url_name == 'sales' %}class="current" aria-current="page"{% endif %}>$ &nbsp; Vendas</a>
       {% if is_manager %}<a href="{% url 'automation_settings' account.id %}" {% if request.resolver_match.url_name == 'automation_settings' %}class="current" aria-current="page"{% endif %}>ϟ &nbsp; Automações e eventos</a>{% endif %}
       <a href="{% url 'links' account.id %}" {% if request.resolver_match.url_name == 'links' %}class="current" aria-current="page"{% endif %}>↗ &nbsp; Links rastreáveis</a>
       <div class="nav-label">Configuração</div>
       <a href="{% url 'integrations' account.id %}" {% if request.resolver_match.url_name == 'integrations' or request.resolver_match.url_name == 'meta_settings' or request.resolver_match.url_name == 'connections' or request.resolver_match.url_name == 'whatsapp_connect' %}class="current" aria-current="page"{% endif %}>⊕ &nbsp; Integrações</a>
-      {% if is_manager %}<a href="{% url 'account_settings' account.id %}" {% if request.resolver_match.url_name == 'account_settings' %}class="current" aria-current="page"{% endif %}>⚙ &nbsp; Equipe e funil</a>{% endif %}
+      {% if is_manager %}<a href="{% url 'account_settings' account.id %}" {% if request.resolver_match.url_name == 'account_settings' %}class="current" aria-current="page"{% endif %}>⚙ &nbsp; Equipe e etapas</a>{% endif %}
       {% endif %}
       {% if user.is_superuser %}<div class="nav-label">Administração</div><a href="{% url 'whatsapp_workspace' %}">⚙ &nbsp; Provedor WhatsApp</a><a href="/admin/">↗ &nbsp; Administração</a>{% endif %}
     </nav>

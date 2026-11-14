@@ -39,7 +39,11 @@ class PortalTests(TestCase):
     def test_all_portal_pages_render_and_require_membership(self):
         for name in ['client_dashboards', 'sales', 'integrations']:
             with self.subTest(name=name):
-                self.assertEqual(self.client.get(reverse(name, args=[self.account.id])).status_code, 200)
+                response = self.client.get(reverse(name, args=[self.account.id]))
+                if name == 'client_dashboards':
+                    self.assertRedirects(response, reverse('dashboard', args=[self.account.id]))
+                else:
+                    self.assertEqual(response.status_code, 200)
                 self.assertEqual(self.client.get(reverse(name, args=[self.other.id])).status_code, 404)
         for section in ['paid', 'organic', 'local', 'site', 'attribution']:
             with self.subTest(section=section):
@@ -97,3 +101,13 @@ class PortalTests(TestCase):
         self.assertEqual(response.context['accounts'][0].spend, Decimal('25'))
         empty = self.client.get(reverse('home'), {'period': 'custom', 'start': '2020-01-01', 'end': '2020-01-02'})
         self.assertIsNone(empty.context['paid']['spend'])
+
+    def test_project_navigation_has_one_overview_and_preserves_legacy_links(self):
+        response = self.client.get(reverse('dashboard', args=[self.account.id]))
+        self.assertContains(response, 'Visão do projeto')
+        self.assertNotContains(response, 'Todos os dashboards')
+        self.assertNotContains(response, 'Abrir dashboards')
+        self.assertContains(response, 'Orgânico · redes sociais')
+        self.assertContains(response, 'Equipe e etapas')
+        self.assertRedirects(self.client.get(reverse('client_dashboards', args=[self.account.id]) + '?start=2026-01-01'),
+                             reverse('dashboard', args=[self.account.id]) + '?start=2026-01-01')

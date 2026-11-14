@@ -111,10 +111,12 @@ def agency(request):
 @login_required
 @require_GET
 def dashboards(request, account_id=None):
-    context = {'channels': CHANNELS.items()}
     if account_id:
         account, role = access(request, account_id)
-        return page(request, 'crm/dashboards.html', account, role, **context)
+        target = '/a/' + str(account.id) + '/'
+        if request.GET:
+            target += '?' + request.GET.urlencode()
+        return redirect(target)
     target = '/'
     if request.GET:
         target += '?' + request.GET.urlencode()
