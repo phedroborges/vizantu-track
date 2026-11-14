@@ -59,8 +59,15 @@ def parse_zapi(payload):
     if not external_id or 'fromMe' not in payload:
         raise ValueError('Mensagem sem identificador ou direção.')
     phone = limited_string(payload.get('phone'), 40)
-    # Never turn a WhatsApp LID into a phone number by stripping non-digits.
-    phone_validator(phone)
+    # A LID is an opaque conversation identity, never a fabricated phone number.
+    chat_identifier = ''
+    if re.fullmatch(r'[0-9]{5,40}@lid', phone):
+        chat_identifier, phone = phone, ''
+    else:
+        phone_validator(phone)
+        lid = payload.get('chatLid')
+        if isinstance(lid, str) and re.fullmatch(r'[0-9]{5,40}@lid', lid):
+            chat_identifier = lid
     moment = payload.get('momment')
     if isinstance(moment, bool) or not isinstance(moment, (int, float)):
         raise ValueError('momment precisa ser um timestamp em milissegundos.')
@@ -80,7 +87,7 @@ def parse_zapi(payload):
                 break
     if payload.get('waitingMessage'):
         kind, text = 'waiting', '[Aguardando conteúdo da mensagem]'
-    return {'external_id': external_id, 'phone': phone, 'occurred_at': occurred,
+    return {'external_id': external_id, 'phone': phone, 'chat_identifier': chat_identifier, 'occurred_at': occurred,
             'direction': 'out' if payload['fromMe'] else 'in', 'kind': kind, 'text': text,
             'name': limited_string(payload.get('chatName') or payload.get('senderName') or '', 150)}
 
@@ -95,11 +102,26 @@ def ingest_message(connection, payload):
     stage = connection.account.stages.filter(archived=False).first()
     if stage is None:
         raise ValueError('Cliente sem etapas comerciais.')
-    lead, _ = Lead.objects.get_or_create(connection=connection, phone=data['phone'], defaults={
-        'name': data['name'], 'stage': stage, 'first_message_at': data['occurred_at'],
-        'last_message_at': data['occurred_at']})
+    by_phone = Lead.objects.filter(connection=connection, phone=data['phone']).first() if data['phone'] else None
+    by_chat = Lead.objects.filter(connection=connection, chat_identifier=data['chat_identifier']).first() if data['chat_identifier'] else None
+    if by_phone and by_chat and by_phone.pk != by_chat.pk:
+        raise ValueError('Telefone e identificador apontam para contatos diferentes; vínculo exige revisão.')
+    lead = by_phone or by_chat
+    if lead is None:
+        lookup = {'chat_identifier': data['chat_identifier']} if data['chat_identifier'] else {'phone': data['phone']}
+        lead, _ = Lead.objects.get_or_create(connection=connection, **lookup, defaults={
+            'phone': data['phone'], 'chat_identifier': data['chat_identifier'],
+            'name': data['name'], 'stage': stage, 'first_message_at': data['occurred_at'],
+            'last_message_at': data['occurred_at']})
     # Serializes first/last message updates, attribution and stage writes for this lead.
     lead = Lead.objects.select_for_update().get(pk=lead.pk)
+    if data['phone'] and lead.phone and lead.phone != data['phone']:
+        raise ValueError('O identificador já foi associado a outro telefone; vínculo exige revisão.')
+    if data['chat_identifier'] and lead.chat_identifier and lead.chat_identifier != data['chat_identifier']:
+        raise ValueError('O telefone já possui outro identificador; vínculo exige revisão.')
+    lead.phone = lead.phone or data['phone']
+    lead.chat_identifier = lead.chat_identifier or data['chat_identifier']
+    lead.save(update_fields=['phone', 'chat_identifier'])
     msg, created = Message.objects.get_or_create(lead=lead, external_id=data['external_id'], defaults={
         k: data[k] for k in ('direction', 'kind', 'text', 'occurred_at')})
     if not created:

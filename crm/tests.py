@@ -147,14 +147,16 @@ class CoreTests(TenantFixture):
         self.assertEqual(Message.objects.get().text, 'Corrigida')
         self.assertTrue(Message.objects.get().edited)
 
-    def test_groups_ignored_and_lid_preserved_as_failed(self):
+    def test_groups_ignored_and_lid_kept_separate_from_phone(self):
         self.client.post(self.webhook_url(), self.payload(isGroup=True), content_type='application/json')
         process_inbox_once()
         self.assertEqual(WebhookEvent.objects.get().status, 'ignored')
         self.client.post(self.webhook_url(), self.payload(phone='123456789@lid'), content_type='application/json')
         process_inbox_once()
-        self.assertEqual(WebhookEvent.objects.filter(status='failed').count(), 1)
-        self.assertEqual(Message.objects.count(), 0)
+        self.assertEqual(WebhookEvent.objects.filter(status='failed').count(), 0)
+        self.assertEqual(Message.objects.count(), 1)
+        self.assertEqual(Lead.objects.get().phone, '')
+        self.assertEqual(Lead.objects.get().chat_identifier, '123456789@lid')
 
     def test_invalid_direction_or_timestamp_not_coerced(self):
         for changes in ({'fromMe': 'false'}, {'momment': 'bad'}, {'momment': float('inf')}, {'text': {'message': 123}}):

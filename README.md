@@ -190,3 +190,5 @@ Comandos: `python manage.py migrate`, `python manage.py setup_automation`, `pyth
 **Piloto necessário:** conectar o número e ativos certos, receber uma mensagem real vinda de anúncio, validar a referência e o click ID, fornecer dataset/WABA e credencial compatível, escolher um evento aceito e confirmar sua chegada em Testar eventos na Meta. Só depois habilitar produção. Não mascarar um evento de WhatsApp como website para contornar elegibilidade.
 
 O campo Token para envio de conversões (CAPI) é independente do token de leitura de anúncios. Nenhum token de anúncios é presumido apto para envio. Desconectar o Facebook remove ambos os tokens locais e volta a automação para simulação.
+
+Conversas identificadas por LID são armazenadas com identificador opaco separado do telefone. Contatos diferentes não compartilham um telefone vazio; um telefone só é associado ao LID quando o mesmo evento traz explicitamente esse par. Conflitos entre contatos exigem revisão e não são mesclados automaticamente. Gatilhos podem funcionar nessas conversas sem inventar números.

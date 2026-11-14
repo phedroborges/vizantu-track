@@ -70,7 +70,8 @@ class Stage(models.Model):
 class Lead(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     connection = models.ForeignKey(Connection, on_delete=models.PROTECT, related_name='leads')
-    phone = models.CharField(max_length=15, validators=[phone_validator])
+    phone = models.CharField(max_length=15, validators=[phone_validator], blank=True)
+    chat_identifier = models.CharField(max_length=80, blank=True)
     name = models.CharField(max_length=150, blank=True)
     stage = models.ForeignKey(Stage, on_delete=models.PROTECT, related_name='leads')
     deal_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.01'))])
@@ -78,7 +79,8 @@ class Lead(models.Model):
     last_message_at = models.DateTimeField(db_index=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['connection', 'phone'], name='lead_connection_phone')]
+        constraints = [models.UniqueConstraint(fields=['connection', 'phone'], condition=~Q(phone=''), name='lead_connection_phone'),
+                       models.UniqueConstraint(fields=['connection', 'chat_identifier'], condition=~Q(chat_identifier=''), name='lead_connection_chat')]
         ordering = ['-last_message_at']
 
     def clean(self):
@@ -86,7 +88,7 @@ class Lead(models.Model):
             raise ValidationError('Etapa e conexão precisam pertencer ao mesmo cliente.')
 
     def __str__(self):
-        return self.name or self.phone
+        return self.name or self.phone or 'Contato WhatsApp sem telefone identificado'
 
 
 class Message(models.Model):
