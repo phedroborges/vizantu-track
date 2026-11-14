@@ -13,6 +13,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from .forms import MetaForm
@@ -179,9 +180,23 @@ def ads_report(request, account_id):
     account, role = access(request, account_id)
     integration = MetaIntegration.objects.filter(account=account).first()
     rows, totals = [], {}
+    today = timezone.localdate()
+    try:
+        start = parse_date(request.GET.get('start', '')) or today - timedelta(days=29)
+        end = parse_date(request.GET.get('end', '')) or today
+        if start > end or (end - start).days > 366:
+            raise ValueError
+    except ValueError:
+        return HttpResponse('Período inválido. Escolha até 366 dias e início anterior ao fim.', status=400)
+    filters = {key: request.GET.get(key, '')[:80] for key in ['campaign_id', 'adset_id', 'ad_id']}
+    options = {}
     if integration and integration.ad_account_id:
-        since = timezone.localdate() - timedelta(days=29)
-        insights = integration.insights.filter(ad_account_id=integration.ad_account_id, date__gte=since)
+        since = start
+        insights = integration.insights.filter(ad_account_id=integration.ad_account_id, date__gte=start, date__lte=end)
+        for key, label in [('campaign_id', 'campaign_name'), ('adset_id', 'adset_name'), ('ad_id', 'ad_name')]:
+            options[key] = list(insights.order_by(key, label).values_list(key, label).distinct())
+            if filters[key]:
+                insights = insights.filter(**{key: filters[key]})
         totals = insights.aggregate(spend=Sum('spend'), impressions=Sum('impressions'), clicks=Sum('clicks'))
         rows = list(insights.values('ad_id').annotate(
             spend=Sum('spend'), impressions=Sum('impressions'), clicks=Sum('clicks')).order_by('-spend'))
@@ -189,10 +204,10 @@ def ads_report(request, account_id):
         for item in insights.order_by('-date', '-id').values('ad_id', 'ad_name', 'campaign_name', 'adset_name'):
             names.setdefault(item['ad_id'], item)
         attributed = Attribution.objects.filter(lead__connection__account=account,
-            occurred_at__date__gte=since, occurred_at__date__lte=timezone.localdate()).exclude(ad_id='').values('ad_id').annotate(count=Count('lead_id', distinct=True))
+            occurred_at__date__gte=since, occurred_at__date__lte=end).exclude(ad_id='').values('ad_id').annotate(count=Count('lead_id', distinct=True))
         counts = {x['ad_id']: x['count'] for x in attributed}
         for row in rows:
             row.update(names[row['ad_id']])
             row['leads'] = counts.get(row['ad_id'], 0)
             row['cost_per_lead'] = row['spend'] / Decimal(row['leads']) if row['leads'] else None
-    return page(request, 'crm/ads.html', account, role, integration=integration, rows=rows, totals=totals)
+    return page(request, 'crm/ads.html', account, role, integration=integration, rows=rows, totals=totals, start=start.isoformat(), end=end.isoformat(), filters=filters, options=options)

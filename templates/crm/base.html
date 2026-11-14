@@ -27,7 +27,7 @@
       <div class="nav-label">Agência</div>
       <a href="{% url 'home' %}" {% if request.resolver_match.url_name == 'home' %}class="current" aria-current="page"{% endif %}>◫ &nbsp; Visão da agência</a>
       <a href="{% url 'clients' %}" {% if request.resolver_match.url_name == 'clients' %}class="current" aria-current="page"{% endif %}>▦ &nbsp; Clientes e projetos</a>
-      {% if not account %}<a href="{% url 'agency_dashboards' %}" {% if request.resolver_match.url_name == 'agency_dashboards' %}class="current" aria-current="page"{% endif %}>▥ &nbsp; Dashboards</a>{% endif %}
+
       {% if account %}
       <div class="nav-label">Dashboards do cliente</div>
       <a href="{% url 'dashboard' account.id %}" {% if request.resolver_match.url_name == 'dashboard' %}class="current" aria-current="page"{% endif %}>◫ &nbsp; Resumo de resultados</a>

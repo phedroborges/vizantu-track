@@ -45,11 +45,11 @@ class PortalTests(TestCase):
             with self.subTest(section=section):
                 response = self.client.get(reverse('channel_report', args=[self.account.id, section]))
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, 'Aguardando integração')
+                self.assertContains(response, 'Aplicar' if section == 'paid' else 'Aguardando integração')
                 self.assertEqual(self.client.get(reverse('channel_report', args=[self.other.id, section])).status_code, 404)
         self.assertEqual(self.client.get(reverse('channel_report', args=[self.account.id, 'invalid'])).status_code, 404)
-        for name in ['clients', 'agency_dashboards']:
-            self.assertEqual(self.client.get(reverse(name)).status_code, 200)
+        self.assertEqual(self.client.get(reverse('clients')).status_code, 200)
+        self.assertRedirects(self.client.get(reverse('agency_dashboards')), reverse('home'))
 
     def test_read_only_pages_do_not_accept_post_and_require_login(self):
         url = reverse('sales', args=[self.account.id])
@@ -65,3 +65,35 @@ class PortalTests(TestCase):
         self.assertEqual(response.context['items'].paginator.count, 2)
         self.assertEqual(list(response.context['revenue_by_currency']), [
             {'currency': 'BRL', 'total': Decimal('125.50')}, {'currency': 'USD', 'total': Decimal('10')}])
+
+
+    def test_agency_filters_scope_dates_and_legacy_url(self):
+        response = self.client.get(reverse('home'), {'project': str(self.account.id), 'period': '7', 'focus': 'paid'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['client_count'], 1)
+        self.assertEqual(len(response.context['daily']), 7)
+        self.assertEqual(response.context['daily'][-1]['contacts'], 1)
+        self.assertEqual(response.context['daily'][-1]['sales'], 1)
+        self.assertNotContains(response, '02 · Orgânico')
+        self.assertEqual(self.client.get(reverse('home'), {'project': str(self.other.id)}).status_code, 404)
+        self.assertEqual(self.client.get(reverse('home'), {'project': 'invalid'}).status_code, 404)
+        self.assertEqual(self.client.get(reverse('home'), {'period': 'custom', 'start': '2026-02-30'}).status_code, 400)
+        self.assertEqual(self.client.get(reverse('home'), {'period': 'custom', 'start': '2026-02-10', 'end': '2026-02-01'}).status_code, 400)
+        empty = self.client.get(reverse('home'), {'period': 'custom', 'start': '2020-01-01', 'end': '2020-01-02'})
+        self.assertEqual(empty.context['contact_count'], 0)
+        self.assertEqual(empty.context['sale_count'], 0)
+        self.assertEqual(len(empty.context['daily']), 2)
+        self.assertRedirects(self.client.get(reverse('agency_dashboards') + '?period=7'), '/?period=7')
+    def test_agency_paid_uses_selected_account_currency_and_period(self):
+        from .models import MetaIntegration, AdInsight
+        meta = MetaIntegration.objects.create(account=self.account, ad_account_id='act_current', currency='BRL')
+        for account_id, amount in [('act_current', '25'), ('act_old', '999')]:
+            AdInsight.objects.create(integration=meta, ad_account_id=account_id, date=timezone.localdate(),
+                ad_id=account_id, ad_name='Anúncio', adset_id='set', adset_name='Conjunto',
+                campaign_id='campaign', campaign_name='Campanha', spend=Decimal(amount), impressions=100, clicks=5)
+        response = self.client.get(reverse('home'), {'project': str(self.account.id), 'period': '7'})
+        self.assertEqual(response.context['paid']['spend'], Decimal('25'))
+        self.assertEqual(response.context['paid']['clicks'], 5)
+        self.assertEqual(response.context['accounts'][0].spend, Decimal('25'))
+        empty = self.client.get(reverse('home'), {'period': 'custom', 'start': '2020-01-01', 'end': '2020-01-02'})
+        self.assertIsNone(empty.context['paid']['spend'])

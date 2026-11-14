@@ -4,7 +4,7 @@ Plataforma própria de dashboards de marketing, atribuição e CRM, para uso em 
 
 ## Interface de marketing e vendas
 
-A página inicial é a visão da agência: clientes acessíveis, novos contatos e vendas dos últimos 30 dias. Receita é separada por moeda e demonstrações não entram nesses totais. A lista de projetos fica em `/clients/`.
+A página inicial é o dashboard único da agência, organizado na tríade pago, orgânico e físico. Permite selecionar todos, um ou vários projetos, período de 7/30/90 dias ou personalizado (até 366 dias), destaque de caminho e visibilidade dos painéis salva no navegador. Gráficos mostram novos contatos/vendas por dia e comparação de contatos entre projetos; a tabela detalha investimento Meta, contatos e vendas. Os dados do CRM são separados das métricas dos canais; não há atribuição presumida. O antigo `/dashboards/` redireciona para essa visão, preservando filtros. Receita é separada por moeda e demonstrações não entram nesses totais. A lista de projetos fica em `/clients/`.
 
 Cada cliente possui uma central de dashboards e navegação em três áreas:
 
